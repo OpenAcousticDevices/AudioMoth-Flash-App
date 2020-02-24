@@ -47,8 +47,7 @@
     },
     "linux": {
       "icon": "build/",
-      "category": "Utility",
-      "artifactName": "AudioMothFlashAppSetup${version}.AppImage"
+      "category": "Utility"
     }
   },
   "devDependencies": {
