@@ -262,6 +262,7 @@ function msdWrite (firmwarePath, destructive, version) {
         });
 
         comms.stopCommunicating();
+        electron.ipcRenderer.send('set-bar-aborted');
         return;
 
     }
