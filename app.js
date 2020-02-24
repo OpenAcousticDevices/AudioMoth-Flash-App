@@ -187,7 +187,7 @@ async function serialWrite (firmwarePath, destructive, version, expectedCRC) {
             icon: path.join(__dirname, '/icon-64.png'),
             buttons: ['Yes', 'No'],
             title: 'Are you sure?',
-            message: 'Overwriting your device\s bootloader can put it in an unusable state if done incorrectly.\nAre you sure you wish to overwrite it?'
+            message: 'Overwriting the bootloader can put your AudioMoth in an unusable state if done incorrectly.\nAre you sure you wish to overwrite it?'
         });
 
         if (buttonIndex !== 0) {
@@ -258,7 +258,7 @@ function msdWrite (firmwarePath, destructive, version) {
             icon: path.join(__dirname, '/icon-64.png'),
             title: 'Cannot overwrite bootloader.',
             buttons: ['OK'],
-            message: 'The AudioMoth\'s USB drive bootloader cannot be overwritten.'
+            message: 'The USB drive bootloader cannot be overwritten with this application.'
         });
 
         comms.stopCommunicating();
