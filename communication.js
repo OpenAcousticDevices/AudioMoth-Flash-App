@@ -59,7 +59,6 @@ var communicating = false;
 
 /* Serial port through which AudioMoth communication is taking place */
 var port;
-var portName;
 /* Buffer object which extends as more bytes are received */
 var queue;
 /* Regex to be applied to the queue buffer when it's full */
@@ -77,6 +76,8 @@ var responseTimeout;
 /* Whether or not a message request has already timed out */
 var timedOut;
 
+var receiveComplete;
+
 /* ID of timeout waiting for reset response */
 var flashResetTimeout;
 
@@ -89,10 +90,6 @@ const FILLER = 0xFF;
 const BLOCK_SIZE = 128;
 exports.BLOCK_SIZE = BLOCK_SIZE;
 const MAX_REPEATS = 10;
-const BLOCK_DELAY = 5;
-const CRC_DELAY = 5;
-const EOF_DELAY = 5;
-const RESET_DELAY = 5;
 
 /* Variables used to keep track of flash process */
 var numberOfRepeats;
@@ -455,8 +452,6 @@ function requestBootloader (callback) {
 
 exports.requestBootloader = requestBootloader;
 
-var receiveComplete;
-
 /* Function called whenever 1 byte of data is received */
 
 function receive (data) {
@@ -485,7 +480,23 @@ function receive (data) {
         /* Only return response if it matches the expected regex */
         if (regexResult) {
 
-            completionFunction(regexResult.toString('utf8'));
+            switch (responseRegex.source) {
+
+            case String.fromCharCode(ACK):
+                electronLog.log('Received expected response: "ACK"');
+                break;
+
+            case String.fromCharCode(EOF):
+                electronLog.log('Received expected response: "EOF"');
+                break;
+
+            default:
+                electronLog.log('Received expected response: "' + regexResult[0] + '"');
+                break;
+
+            }
+
+            completionFunction(regexResult[0]);
 
         } else {
 
@@ -528,19 +539,23 @@ async function send (buffer, expectedLength, regex, callback) {
             electronLog.error(err);
             port.close();
 
-        } else {
-
-            responseTimeout = setTimeout(function () {
-
-                completionFunction(false, true);
-
-            }, PORT_TIMEOUT_LENGTH);
-
-            timedOut = false;
-
         }
 
     });
+
+    electronLog.log('Setting timeout');
+
+    responseTimeout = setTimeout(function () {
+
+        electronLog.error('Timed out waiting for response');
+
+        timedOut = true;
+
+        completionFunction(false);
+
+    }, PORT_TIMEOUT_LENGTH);
+
+    timedOut = false;
 
 }
 
@@ -549,8 +564,6 @@ async function send (buffer, expectedLength, regex, callback) {
 function openPort (name, openCallback, closeCallback, errorCallback) {
 
     var parser;
-
-    portName = name;
 
     /* Clear buffer */
     queue = Buffer.alloc(0);
@@ -716,18 +729,14 @@ function requestCRC (isDestructive, callback) {
 
     var readType, sendBuffer, responseLength, regex;
 
-    openPort(portName, function () {
+    /* If the flash is destructive, then the CRC should take into account the bootloader as well as the firmware itself */
+    readType = isDestructive ? 'v' : 'c';
 
-        /* If the flash is destructive, then the CRC should take into account the bootloader as well as the firmware itself */
-        readType = isDestructive ? 'v' : 'c';
+    sendBuffer = Buffer.from(readType);
+    responseLength = 18;
+    regex = /CRC: 0000[A-Z0-9]{4}/;
 
-        sendBuffer = Buffer.from(readType);
-        responseLength = 18;
-        regex = /CRC: 0000[A-Z0-9]{4}/;
-
-        send(sendBuffer, responseLength, regex, callback);
-
-    });
+    send(sendBuffer, responseLength, regex, callback);
 
 }
 
@@ -777,56 +786,49 @@ function resetFailure (message) {
 
 function checkSerialComplete (message, successCallback) {
 
-    setTimeout(function () {
+    var sendBuffer, responseLength, regex;
 
-        var sendBuffer, responseLength, regex;
+    /* Send full reset message */
+    sendBuffer = Buffer.from('r');
+    responseLength = 1;
+    regex = /r/;
 
-        openPort(portName, function () {
+    send(sendBuffer, responseLength, regex, function (response) {
 
-            /* Send full reset message */
-            sendBuffer = Buffer.from('r');
-            responseLength = 1;
-            regex = /r/;
+        clearTimeout(flashResetTimeout);
+        clearTimeout(responseTimeout);
 
-            send(sendBuffer, responseLength, regex, function (response) {
+        if (port.isOpen) {
 
-                clearTimeout(flashResetTimeout);
+            port.close();
 
-                if (port.isOpen) {
+        }
 
-                    port.close();
-
-                }
-
-
-                if (!response) {
-
-                    resetFailure(message);
-                    return;
         electronLog.log('Reset message sent, response: "' + response + '"');
 
-                }
+        if (!response) {
 
+            resetFailure(message);
+            return;
 
-                /* Check device has reset */
-                electron.ipcRenderer.send('set-bar-restarting', SERIAL_RESET_TIMEOUT_LENGTH);
+        }
 
-                resetTime = 0;
-                serialRestartTimer(message, successCallback);
         electronLog.log('Waiting for serial device to restart');
 
-            });
+        /* Check device has reset */
+        electron.ipcRenderer.send('set-bar-restarting', SERIAL_RESET_TIMEOUT_LENGTH);
 
-            /* If there's no response to the reset message */
-            flashResetTimeout = setTimeout(function () {
+        resetTime = 0;
+        serialRestartTimer(message, successCallback);
 
-                resetFailure(message);
+    });
 
-            }, 5000);
+    /* If there's no response to the reset message */
+    flashResetTimeout = setTimeout(function () {
 
-        });
+        resetFailure(message);
 
-    }, RESET_DELAY);
+    }, 5000);
 
 }
 
@@ -836,55 +838,53 @@ function crcCheck (expectedCRC, isDestructive, successCallback) {
 
     var receivedCRC, errorString;
 
-    setTimeout(function () {
+    requestCRC(isDestructive, function (response) {
 
-        requestCRC(isDestructive, function (response) {
+        if (response) {
 
-            port.close();
+            /* CRC message sent by bootloader is prepended with 'CRC:', so only the last 4 characters which actually contain the CRC are needed */
+            receivedCRC = response.substr(response.length - 4, 4);
 
-            if (response) {
+            if (expectedCRC) {
 
-                /* CRC message sent by bootloader is prepended with 'CRC:', so only the last 4 characters which actually contain the CRC are needed */
-                receivedCRC = response.substr(response.length - 4, 4);
-
-                if (expectedCRC) {
-
-
-                    if (receivedCRC === expectedCRC) {
-
-                        checkSerialComplete('Firmware has been successfully updated.', successCallback);
-
-                    } else {
                 electronLog.log('Comparing CRCs');
                 electronLog.log('Expected: ' + expectedCRC);
                 electronLog.log('Received: ' + receivedCRC);
 
-                        errorString = 'Flash CRC did not match.\n';
-                        errorString += 'Expected ' + expectedCRC + ' but received ' + receivedCRC + '\n';
-                        errorString += '\nReconnect device and flash again.';
-                        displayError('Incorrect CRC', errorString);
-                        electron.ipcRenderer.send('set-bar-aborted');
-                        stopCommunicating();
+                if (receivedCRC === expectedCRC) {
 
-                    }
+                    electronLog.log('Resetting device');
+                    checkSerialComplete('Firmware has been successfully updated.', successCallback);
 
                 } else {
 
-                    checkSerialComplete('Firmware has been successfully updated. Flash CRC: ' + receivedCRC, successCallback);
+                    errorString = 'Flash CRC did not match.\n';
+                    errorString += 'Expected ' + expectedCRC + ' but received ' + receivedCRC + '\n';
+                    errorString += '\nReconnect device and flash again.';
+                    displayError('Incorrect CRC', errorString);
+                    electron.ipcRenderer.send('set-bar-aborted');
+                    stopCommunicating();
+                    port.close();
 
                 }
 
             } else {
 
-                displayError('Unable to verify success', 'Flash completed, but success could not be verified.\nSwitch to USB/OFF, detach, reattach your device, and flash again.');
-                electron.ipcRenderer.send('set-bar-aborted');
-                stopCommunicating();
+                checkSerialComplete('Firmware has been successfully updated. Flash CRC: ' + receivedCRC, successCallback);
 
             }
 
-        });
+        } else {
 
-    }, CRC_DELAY);
+            displayError('Unable to verify success', 'Flash completed, but success could not be verified.\nSwitch to USB/OFF, detach, reattach your device, and flash again.');
+            electron.ipcRenderer.send('set-bar-aborted');
+            stopCommunicating();
+
+            port.close();
+
+        }
+
+    });
 
 }
 
@@ -898,40 +898,25 @@ function confirmEOF (expectedCRC, isDestructive, successCallback) {
     responseLength = 1;
     regex = new RegExp(String.fromCharCode(ACK));
 
-    setTimeout(function () {
+    send(sendBuffer, responseLength, regex, function (response) {
 
-        openPort(portName, function () {
+        if (response) {
 
-            send(sendBuffer, responseLength, regex, function (response) {
-
-                console.log('EOF', response);
-
-                if (response) {
-
-                    console.log('Success');
-
-                } else {
-
-                    console.error('Did not receive ACK from AudioMoth after sending end of file');
-                    displayError('Failed to flash device.', 'End of file acknowledgement was not received from AudioMoth.\nSwitch to USB/OFF, detach, reattach your device, and try again.');
-                    stopCommunicating();
-
-                }
-
-                port.close();
-
-            });
-
-        }, function () {
             electronLog.log('Successfully sent all blocks and received EOF message');
 
             clearTimeout(responseTimeout);
 
             crcCheck(expectedCRC, isDestructive, successCallback);
 
-        }, stopCommunicating);
+        } else {
 
-    }, EOF_DELAY);
+            electronLog.error('Did not receive ACK from AudioMoth after sending end of file');
+            displayError('Failed to flash device.', 'End of file acknowledgement was not received from AudioMoth.\nSwitch to USB/OFF, detach, reattach your device, and try again.');
+            stopCommunicating();
+
+        }
+
+    });
 
 }
 
@@ -989,7 +974,7 @@ function sendFirmwareData (expectedCRC, isDestructive, successCallback) {
     electron.ipcRenderer.send('set-bar-serial-flash-progress', blockNumber);
 
     /* If all blocks have been sent, send EOF */
-    if (blockNumber === splitBuffers.length) {
+    if (blockNumber >= splitBuffers.length) {
 
         confirmEOF(expectedCRC, isDestructive, successCallback);
         return;
@@ -1004,6 +989,7 @@ function sendFirmwareData (expectedCRC, isDestructive, successCallback) {
         clearTimeout(responseTimeout);
         timedOut = false;
         stopCommunicating();
+
         return;
 
     }
@@ -1016,69 +1002,37 @@ function sendFirmwareData (expectedCRC, isDestructive, successCallback) {
 
     numberOfRepeats++;
 
-    /* Wait for a short amount of time between each block to give time for previous port to close */
-    setTimeout(function () {
+    send(sendBuffer, responseLength, regex, function (response) {
 
-        openPort(portName, function () {
+        if (timedOut) {
 
-            send(sendBuffer, responseLength, regex, function (response, timedOut) {
+            /* Update current block number calculation */
+            upper = Math.min(Math.max(upper, blockNumber + 1), splitBuffers.length - 1);
+            electronLog.log('Block ', blockNumber, ' timed out, reattempting');
 
-                if (timedOut) {
+        } else {
 
-                    /* Update current block number calculation */
-                    upper = Math.min(Math.max(upper, blockNumber + 1), splitBuffers.length - 1);
-                    console.log('Block ', blockNumber, ' timed out. Reattempting.');
+            // electronLog.log(sendBuffer);
+            electronLog.log(blockNumber + ' / ' + splitBuffers.length);
 
-                } else {
+            if (response) {
 
-                    console.log(sendBuffer);
-                    console.log(blockNumber + ' / ' + splitBuffers.length, response);
-
-                    if (response) {
-
-                        /* Send was successful, move ot next block */
-                        numberOfRepeats = 0;
-                        lower = blockNumber + 1;
-                        upper = lower;
-
-                    } else {
-
-                        console.log('NAK received, resending.');
-
-                    }
-
-                }
-
-                port.close();
-
-            });
-
-        }, function () {
-
-            if (!timedOut) {
-
-                sendFirmwareData(expectedCRC, isDestructive, successCallback);
+                /* Send was successful, move ot next block */
+                numberOfRepeats = 0;
+                lower = blockNumber + 1;
+                upper = lower;
 
             } else {
 
-                console.log('Timed out, giving up.');
-                displayError('Failed to flash device.', 'AudioMoth timed out while opening port.\nSwitch to USB/OFF, detach, reattach your device, and try again.');
-                stopCommunicating();
+                electronLog.log('NAK received, resending');
 
             }
 
-            timedOut = false;
-            clearTimeout(responseTimeout);
+        }
 
-        }, function () {
+        sendFirmwareData(expectedCRC, isDestructive, successCallback);
 
-            stopCommunicating();
-            timedOut = false;
-            clearTimeout(responseTimeout);
-
-        });
-
-    }, BLOCK_DELAY);
+    });
 
 }
 
@@ -1102,8 +1056,6 @@ function readyCheck (sendBuffer, expectedCRC, isDestructive, successCallback) {
     /* Send initial write message, signalling start of XMODEM process */
     send(sendBuffer, responseLength, regex, function (response) {
 
-        port.close();
-
         if (response) {
 
             electronLog.log('Ready response received after ' + readyCheckCount + ' attempts');
@@ -1120,11 +1072,7 @@ function readyCheck (sendBuffer, expectedCRC, isDestructive, successCallback) {
 
             setTimeout(function () {
 
-                openPort(portName, function () {
-
-                    readyCheck(sendBuffer, expectedCRC, isDestructive, successCallback);
-
-                });
+                readyCheck(sendBuffer, expectedCRC, isDestructive, successCallback);
 
             }, READY_CHECK_DELAY_LENGTH);
 
