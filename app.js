@@ -13,6 +13,7 @@ const dialog = electron.remote.dialog;
 
 const fs = require('fs');
 const path = require('path');
+const electronLog = require('electron-log');
 
 const firmwareInterface = require('./firmwareInterface.js');
 const comms = require('./communication.js');
@@ -39,6 +40,9 @@ var inFlashableState = false;
 
 /* Frequency of status check */
 var STATUS_TIMEOUT_LENGTH = 500;
+
+electronLog.transports.file.fileName = 'audiomoth_flash.log';
+console.log('Writing log to: ' + electronLog.transports.file.getFile().path);
 
 /* Enable flash buttons based on whether or not the app and connected device are in a state which permits flashing */
 function updateFlashButtonState () {
@@ -187,7 +191,7 @@ async function serialWrite (firmwarePath, destructive, version, expectedCRC) {
             icon: path.join(__dirname, '/icon-64.png'),
             buttons: ['Yes', 'No'],
             title: 'Are you sure?',
-            message: 'Overwriting the bootloader can put your AudioMoth in an unusable state if done incorrectly.\nAre you sure you wish to overwrite it?'
+            message: 'Overwriting the bootloader with the wrong firmware can render your AudioMoth unuseable. Are you sure you wish to overwrite it?'
         });
 
         if (buttonIndex !== 0) {
@@ -198,7 +202,7 @@ async function serialWrite (firmwarePath, destructive, version, expectedCRC) {
 
         }
 
-        console.log('PERFORMING DESTRUCTIVE WRITE');
+        electronLog.log('PERFORMING DESTRUCTIVE WRITE');
 
     }
 
@@ -214,7 +218,7 @@ async function serialWrite (firmwarePath, destructive, version, expectedCRC) {
 
     comms.openPort(portName, function () {
 
-        console.log('Opened port to send ready query.');
+        electronLog.log('Opened port to send ready query');
 
         fs.readFile(firmwarePath, function (err, contents) {
 
@@ -233,7 +237,7 @@ async function serialWrite (firmwarePath, destructive, version, expectedCRC) {
 
     }, function () {
 
-        console.log('Closed port.');
+        electronLog.log('Closed port');
 
     }, function () {
 
@@ -275,8 +279,8 @@ function msdWrite (firmwarePath, destructive, version) {
 
         if (msdErr) {
 
-            console.error(msdErr);
-            console.error('MSD upload failure.');
+            electronLog.error('MSD upload failure');
+            electronLog.error(msdErr);
 
             dialog.showMessageBox({
                 type: 'error',

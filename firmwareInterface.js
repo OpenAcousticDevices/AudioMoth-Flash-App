@@ -14,6 +14,7 @@ const menu = electron.remote.Menu;
 const fs = require('fs');
 const path = require('path');
 const showdown = require('showdown');
+const electronLog = require('electron-log');
 
 /* Parse line breaks as <br> */
 showdown.setOption('simpleLineBreaks', true);
@@ -427,7 +428,7 @@ function loadLocalReleaseFile (err, data) {
 
 function remoteReleaseFailure (err) {
 
-    console.error(err);
+    electronLog.error(err);
 
     dialog.showMessageBox({
         type: 'error',

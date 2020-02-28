@@ -16,6 +16,7 @@ const ByteLength = SerialPort.parsers.ByteLength;
 const drivelist = require('drivelist');
 const fs = require('fs');
 const path = require('path');
+const electronLog = require('electron-log');
 
 /* Timeout to close port if message is sent and no response is received */
 const PORT_TIMEOUT_LENGTH = 5000;
@@ -186,7 +187,7 @@ async function getMsdPath () {
 
     } catch (err) {
 
-        console.error(err);
+        electronLog.error(err);
         return null;
 
     }
@@ -201,7 +202,7 @@ async function checkMsdComplete (successCallback) {
 
     var msdPath = await getMsdPath();
 
-    console.log('Checking drives');
+    electronLog.log('Checking drives');
 
     /* If the final timeout hasn't been cleared yet */
     if (!msdFinalTimedOut) {
@@ -296,11 +297,11 @@ async function uploadFirmwareToMsd (path, failureCallback, successCallback) {
 
         } else {
 
-            console.log('Successfully wrote firmware to MSD bootloader.');
+            electronLog.log('Successfully wrote firmware to MSD bootloader');
 
             updateMsdProgress(function () {
 
-                console.log('Waiting for restart');
+                electronLog.log('Waiting for restart');
 
                 electron.ipcRenderer.send('set-bar-restarting', MSD_RESET_TIMEOUT_LENGTH);
                 msdFinalTimedOut = false;
@@ -429,7 +430,7 @@ function requestBootloader (callback) {
         /* Check for expected confirmation response */
         if (packet[0] === 0x0A && packet[1] === 0x01) {
 
-            console.log('Attached device switching to bootloader.');
+            electronLog.log('Attached device switching to bootloader');
 
             /* Device will load bootloader, repeatedly check for the appearance of a serial or MSD bootloader until timeout */
             bootloaderCheckTimedOut = false;
@@ -488,8 +489,7 @@ function receive (data) {
 
         } else {
 
-            console.log('Unexpected response:');
-            console.log(queue.toString('utf8'));
+            electronLog.error('Unexpected response: "' + queue + '"');
             completionFunction(false);
 
         }
@@ -516,12 +516,16 @@ async function send (buffer, expectedLength, regex, callback) {
     /* Clear buffer */
     queue = Buffer.alloc(0);
 
+    electronLog.log('Sending buffer');
+
     /* Send command */
     port.write(buffer, function (err) {
 
+        electronLog.log('Written to port');
+
         if (err) {
 
-            console.error(err);
+            electronLog.error(err);
             port.close();
 
         } else {
@@ -577,7 +581,7 @@ function openPort (name, openCallback, closeCallback, errorCallback) {
 
     port.on('error', function (err) {
 
-        console.error(err);
+        electronLog.error(err);
         displayError('Failed to open port.', 'Could not connect to AudioMoth.\nReconnect device and flash again.');
 
         if (portErrorCallback) {
@@ -753,6 +757,8 @@ async function serialRestartTimer (message, successCallback) {
 
 function resetFailure (message) {
 
+    electronLog.log('Reset failed, closing port');
+
     port.close();
 
     dialog.showMessageBox({
@@ -792,22 +798,22 @@ function checkSerialComplete (message, successCallback) {
 
                 }
 
-                console.log('Reset message sent, response: "', response, '"');
 
                 if (!response) {
 
                     resetFailure(message);
                     return;
+        electronLog.log('Reset message sent, response: "' + response + '"');
 
                 }
 
-                console.log('Waiting for serial device to restart.');
 
                 /* Check device has reset */
                 electron.ipcRenderer.send('set-bar-restarting', SERIAL_RESET_TIMEOUT_LENGTH);
 
                 resetTime = 0;
                 serialRestartTimer(message, successCallback);
+        electronLog.log('Waiting for serial device to restart');
 
             });
 
@@ -843,15 +849,15 @@ function crcCheck (expectedCRC, isDestructive, successCallback) {
 
                 if (expectedCRC) {
 
-                    console.log('Comparing CRCs.');
-                    console.log('Expected: ', expectedCRC);
-                    console.log('Received: ', receivedCRC);
 
                     if (receivedCRC === expectedCRC) {
 
                         checkSerialComplete('Firmware has been successfully updated.', successCallback);
 
                     } else {
+                electronLog.log('Comparing CRCs');
+                electronLog.log('Expected: ' + expectedCRC);
+                electronLog.log('Received: ' + receivedCRC);
 
                         errorString = 'Flash CRC did not match.\n';
                         errorString += 'Expected ' + expectedCRC + ' but received ' + receivedCRC + '\n';
@@ -917,8 +923,8 @@ function confirmEOF (expectedCRC, isDestructive, successCallback) {
             });
 
         }, function () {
+            electronLog.log('Successfully sent all blocks and received EOF message');
 
-            console.log('Closed port! Firmware sending complete.');
             clearTimeout(responseTimeout);
 
             crcCheck(expectedCRC, isDestructive, successCallback);
@@ -993,7 +999,7 @@ function sendFirmwareData (expectedCRC, isDestructive, successCallback) {
     /* If a single block has timed out too many times, cancel flash */
     if (numberOfRepeats > MAX_REPEATS) {
 
-        console.log('TOO MANY REPEATS');
+        electronLog.error('TOO MANY REPEATS');
         displayError('Failed to flash device.', 'AudioMoth is no longer responding.\nSwitch to USB/OFF, detach, reattach your device, and try again.');
         clearTimeout(responseTimeout);
         timedOut = false;
@@ -1082,7 +1088,7 @@ function readyCheck (sendBuffer, expectedCRC, isDestructive, successCallback) {
 
     if (readyCheckCount >= MAX_READY_CHECK_COUNT) {
 
-        console.error('Didn\'t receive expected ready response after ' + MAX_READY_CHECK_COUNT + ' attempts.');
+        electronLog.error('Didn\'t receive expected ready response after ' + MAX_READY_CHECK_COUNT + ' attempts');
         displayError('Failed to flash device.', 'Ready signal was not received from AudioMoth.\nSwitch to USB/OFF, detach, reattach your device, and try again.');
         stopCommunicating();
 
@@ -1100,18 +1106,17 @@ function readyCheck (sendBuffer, expectedCRC, isDestructive, successCallback) {
 
         if (response) {
 
-            console.log('Ready response received after ' + readyCheckCount + ' attempts.');
+            electronLog.log('Ready response received after ' + readyCheckCount + ' attempts');
 
             numberOfRepeats = 0;
             blockNumber = 0;
 
-            console.log('AudioMoth is ready, sending firmware chunks...');
-
+            electronLog.log('AudioMoth is ready, sending firmware chunks');
             sendFirmwareData(expectedCRC, isDestructive, successCallback);
 
         } else {
 
-            console.log('Didn\'t receive expected response. Trying ready message again.');
+            electronLog.log('Didn\'t receive expected response, trying ready message again');
 
             setTimeout(function () {
 
