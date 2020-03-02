@@ -257,6 +257,8 @@ function msdWrite (firmwarePath, destructive, version) {
     /* The MSD bootloader doesn't support being overwritten, so cancel */
     if (destructive) {
 
+        electron.ipcRenderer.send('set-bar-aborted');
+
         dialog.showMessageBox({
             type: 'error',
             icon: path.join(__dirname, '/icon-64.png'),
@@ -266,7 +268,6 @@ function msdWrite (firmwarePath, destructive, version) {
         });
 
         comms.stopCommunicating();
-        electron.ipcRenderer.send('set-bar-aborted');
         return;
 
     }
