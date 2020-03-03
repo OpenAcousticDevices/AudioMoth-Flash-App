@@ -170,13 +170,15 @@ async function getStatus (callback) {
 
 function displayCompleteMessage (message) {
 
-    comms.stopCommunicating();
-
-    /* If no message is proviced, use default */
+    /* If no message is provided, use default */
     message = (!message) ? 'Firmware has been successfully updated.' : message;
     electron.ipcRenderer.send('set-bar-completed', message);
 
 }
+
+/* Re-enable the status box when the progress window closes */
+
+electron.ipcRenderer.on('flash-success', comms.stopCommunicating);
 
 /* If a device is found in the serial bootloader, start firmware sending process */
 async function serialWrite (firmwarePath, destructive, version, expectedCRC) {

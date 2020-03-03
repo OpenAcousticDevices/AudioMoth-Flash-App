@@ -131,6 +131,8 @@ ipcMain.on('set-bar-completed', (event, message) => {
             flashProgressBar.close();
             flashProgressBar = null;
 
+            mainWindow.webContents.send('flash-success');
+
         }, 3000);
 
     }
