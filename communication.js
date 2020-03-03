@@ -33,7 +33,7 @@ var bootloaderCheckTimeout;
 var bootloaderCheckTimedOut = false;
 
 /* Timeout to wait for a reset after a serial flash */
-const SERIAL_RESET_TIMEOUT_LENGTH = 5000;
+const SERIAL_RESET_TIMEOUT_LENGTH = 7500;
 const SERIAL_RESET_CHECK_TIMEOUT_LENGTH = 100;
 
 /* Timeout to wait for a reset after an MSD flash */
