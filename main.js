@@ -373,7 +373,7 @@ app.on('ready', function () {
     windowHeight = shrinkWindowHeight(475);
 
     mainWindow = new BrowserWindow({
-        width: 560,
+        width: 565,
         height: windowHeight,
         useContentSize: true,
         title: 'AudioMoth Flash App',
