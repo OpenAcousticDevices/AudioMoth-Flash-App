@@ -370,7 +370,7 @@ app.on('ready', function () {
 
     }
 
-    windowHeight = shrinkWindowHeight(475);
+    windowHeight = shrinkWindowHeight(485);
 
     mainWindow = new BrowserWindow({
         width: 565,
@@ -391,7 +391,7 @@ app.on('ready', function () {
         /* This resize cannot be blocked so this fix resizes it, taking into account the menu change */
         if (process.platform === 'win32') {
 
-            mainWindow.setSize(565, windowHeight + 20);
+            mainWindow.setSize(565, windowHeight + 40);
 
         }
 
