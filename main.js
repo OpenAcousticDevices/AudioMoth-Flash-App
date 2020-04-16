@@ -370,7 +370,7 @@ app.on('ready', function () {
 
     }
 
-    windowHeight = shrinkWindowHeight(485);
+    windowHeight = shrinkWindowHeight(460);
 
     mainWindow = new BrowserWindow({
         width: 565,
