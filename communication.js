@@ -361,6 +361,15 @@ async function getAudioMothPortName () {
 
     }
 
+    electronLog.log('Failed to find AudioMoth port. Ports found:');
+
+    for (let i = 0; i < ports.length; i += 1) {
+
+        p = ports[i];
+        electronLog.log(p.vendorId + ', ' + p.productId + ', ' + p.path);
+
+    }
+
     throw noAudioMothError;
 
 }
