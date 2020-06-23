@@ -525,7 +525,7 @@ function receive (data) {
 
         } else {
 
-            electronLog.error('Unexpected response: "' + queue + '"');
+            electronLog.error('Unexpected response: "' + queue.toString('hex') + '"');
             completionFunction(false);
 
         }
@@ -578,7 +578,7 @@ async function send (buffer, expectedLength, regex, callback) {
     /* Send command */
     port.write(buffer, function (err) {
 
-        electronLog.log('Written to port');
+        electronLog.log('Written data to port:\n', buffer.toString('hex'));
 
         if (err) {
 
