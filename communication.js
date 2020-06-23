@@ -19,10 +19,10 @@ const path = require('path');
 const electronLog = require('electron-log');
 
 /* Timeout to close port if message is sent and no response is received */
-const PORT_TIMEOUT_LENGTH = 5000;
+const PORT_TIMEOUT_LENGTH = 1500;
 
 /* Counter for ready checks */
-const MAX_READY_CHECK_COUNT = 50;
+const MAX_READY_CHECK_COUNT = 7;
 var readyCheckCount;
 const READY_CHECK_DELAY_LENGTH = 100;
 
@@ -76,6 +76,9 @@ var responseTimeout;
 /* Whether or not a message request has already timed out */
 var timedOut;
 
+/* Timeout for attempting another ready check */
+var readyTimeout;
+
 var receiveComplete;
 
 /* ID of timeout waiting for reset response */
@@ -109,6 +112,28 @@ exports.STATUS_SERIAL_BOOTLOADER = 1;
 exports.STATUS_NO_AUDIOMOTH = 2;
 exports.STATUS_AUDIOMOTH_AUTO = 3;
 exports.STATUS_AUDIOMOTH_MANUAL = 4;
+
+/* Flag indicating the overall process has failed and shouldn't continue */
+var flashFailed = false;
+
+/* Max number of attempts at opening the port allowed in app.js */
+var MAX_PORT_OPEN_ATTEMPTS = 5;
+
+exports.setPortOpenAttemptsMax = function (maxVal) {
+
+    MAX_PORT_OPEN_ATTEMPTS = maxVal;
+
+}
+
+function closePort () {
+
+    if (port.isOpen) {
+
+        port.close();
+
+    }
+
+}
 
 /* Generate Cyclical Redundancy Check code */
 
@@ -513,6 +538,27 @@ function receive (data) {
 
 async function send (buffer, expectedLength, regex, callback) {
 
+    if (flashFailed) {
+
+        return;
+
+    }
+
+    if (!port.isOpen) {
+
+        electronLog.error('Sending buffer failed. Port is closed');
+        clearTimeout(responseTimeout);
+
+        if (completionFunction) {
+
+            completionFunction(false);
+
+        }
+
+        return;
+
+    }
+
     receiveComplete = false;
 
     /* Set response expectations */
@@ -536,8 +582,7 @@ async function send (buffer, expectedLength, regex, callback) {
 
         if (err) {
 
-            electronLog.error(err);
-            port.close();
+            clearTimeout(responseTimeout);
 
         }
 
@@ -558,6 +603,20 @@ async function send (buffer, expectedLength, regex, callback) {
     timedOut = false;
 
 }
+
+exports.setPortErrorCallback = function (callback) {
+
+    portErrorCallback = callback;
+
+};
+
+exports.failFlash = function () {
+
+    displayError('Communication failure.', 'Could not connect to AudioMoth.\nReconnect device and flash again.');
+
+    flashFailed = true;
+
+};
 
 /* Open a port with given name, calling each of the given callbacks when the port opens/closes */
 
@@ -768,7 +827,7 @@ function resetFailure (message) {
 
     electronLog.log('Reset failed, closing port');
 
-    port.close();
+    closePort();
 
     dialog.showMessageBox({
         type: 'warning',
@@ -798,11 +857,7 @@ function checkSerialComplete (message, successCallback) {
         clearTimeout(flashResetTimeout);
         clearTimeout(responseTimeout);
 
-        if (port.isOpen) {
-
-            port.close();
-
-        }
+        closePort();
 
         electronLog.log('Reset message sent, response: "' + response + '"');
 
@@ -864,7 +919,7 @@ function crcCheck (expectedCRC, isDestructive, successCallback) {
                     displayError('Incorrect CRC', errorString);
                     electron.ipcRenderer.send('set-bar-aborted');
                     stopCommunicating();
-                    port.close();
+                    closePort();
 
                 }
 
@@ -880,7 +935,7 @@ function crcCheck (expectedCRC, isDestructive, successCallback) {
             electron.ipcRenderer.send('set-bar-aborted');
             stopCommunicating();
 
-            port.close();
+            closePort();
 
         }
 
@@ -913,6 +968,7 @@ function confirmEOF (expectedCRC, isDestructive, successCallback) {
             electronLog.error('Did not receive ACK from AudioMoth after sending end of file');
             displayError('Failed to flash device.', 'End of file acknowledgement was not received from AudioMoth.\nSwitch to USB/OFF, detach, reattach your device, and try again.');
             stopCommunicating();
+            closePort();
 
         }
 
@@ -982,13 +1038,15 @@ function sendFirmwareData (expectedCRC, isDestructive, successCallback) {
     }
 
     /* If a single block has timed out too many times, cancel flash */
-    if (numberOfRepeats > MAX_REPEATS) {
+    if (numberOfRepeats >= MAX_REPEATS) {
 
-        electronLog.error('TOO MANY REPEATS');
+        electronLog.error('Attempted and failed to send firmware data', numberOfRepeats, 'times. Giving up.');
         displayError('Failed to flash device.', 'AudioMoth is no longer responding.\nSwitch to USB/OFF, detach, reattach your device, and try again.');
         clearTimeout(responseTimeout);
         timedOut = false;
+        flashFailed = true;
         stopCommunicating();
+        closePort();
 
         return;
 
@@ -1002,7 +1060,15 @@ function sendFirmwareData (expectedCRC, isDestructive, successCallback) {
 
     numberOfRepeats++;
 
+    timedOut = false;
+
     send(sendBuffer, responseLength, regex, function (response) {
+
+        if (flashFailed) {
+
+            return;
+
+        }
 
         if (timedOut) {
 
@@ -1025,6 +1091,11 @@ function sendFirmwareData (expectedCRC, isDestructive, successCallback) {
             } else {
 
                 electronLog.log('NAK received, resending');
+                if (port.isOpen) {
+
+                    port.flush();
+
+                }
 
             }
 
@@ -1036,15 +1107,23 @@ function sendFirmwareData (expectedCRC, isDestructive, successCallback) {
 
 }
 
-function readyCheck (sendBuffer, expectedCRC, isDestructive, successCallback) {
+function readyCheck (sendBuffer, expectedCRC, isDestructive, successCallback, version, maxBlocks) {
 
     var responseLength, regex;
 
+    electron.ipcRenderer.send('set-bar-serial-ready-check', readyCheckCount);
+
     if (readyCheckCount >= MAX_READY_CHECK_COUNT) {
+
+        clearTimeout(readyTimeout);
 
         electronLog.error('Didn\'t receive expected ready response after ' + MAX_READY_CHECK_COUNT + ' attempts');
         displayError('Failed to flash device.', 'Ready signal was not received from AudioMoth.\nSwitch to USB/OFF, detach, reattach your device, and try again.');
+
         stopCommunicating();
+        closePort();
+
+        return;
 
     }
 
@@ -1063,6 +1142,10 @@ function readyCheck (sendBuffer, expectedCRC, isDestructive, successCallback) {
             numberOfRepeats = 0;
             blockNumber = 0;
 
+            /* Send information to main process to start progress bar */
+            electron.ipcRenderer.send('set-bar-flashing');
+            electron.ipcRenderer.send('set-bar-info', version, maxBlocks);
+
             electronLog.log('AudioMoth is ready, sending firmware chunks');
             sendFirmwareData(expectedCRC, isDestructive, successCallback);
 
@@ -1070,11 +1153,11 @@ function readyCheck (sendBuffer, expectedCRC, isDestructive, successCallback) {
 
             electronLog.log('Didn\'t receive expected response, trying ready message again');
 
-            setTimeout(function () {
+            readyTimeout = setTimeout(function () {
 
                 readyCheck(sendBuffer, expectedCRC, isDestructive, successCallback);
 
-            }, READY_CHECK_DELAY_LENGTH);
+            }, READY_CHECK_DELAY_LENGTH * Math.pow(2, readyCheckCount));
 
         }
 
@@ -1084,9 +1167,11 @@ function readyCheck (sendBuffer, expectedCRC, isDestructive, successCallback) {
 
 /* Start serial flash process */
 
-function sendFirmware (buffer, isDestructive, expectedCRC, successCallback) {
+function sendFirmware (buffer, isDestructive, expectedCRC, successCallback, version, maxBlocks) {
 
     var currentBlock, writeType, sendBuffer;
+
+    flashFailed = false;
 
     splitBuffers = [];
     currentBlock = Buffer.alloc(BLOCK_SIZE);
@@ -1117,7 +1202,7 @@ function sendFirmware (buffer, isDestructive, expectedCRC, successCallback) {
 
     readyCheckCount = 0;
 
-    readyCheck(sendBuffer, expectedCRC, isDestructive, successCallback);
+    readyCheck(sendBuffer, expectedCRC, isDestructive, successCallback, version, maxBlocks);
 
 }
 

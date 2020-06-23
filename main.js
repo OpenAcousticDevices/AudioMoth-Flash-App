@@ -23,9 +23,11 @@ var serialFlashMax;
 var restartTimeout;
 
 /* First and last section of the bar are dedicated to connecting to the device/switching to bootloader and restarting after */
+/* CONNECTION_PERCENTAGE_VALUE must equal MAX_PORT_OPEN_ATTEMPTS in app.js */
 const CONNECTION_PERCENTAGE_VALUE = 5;
+const READY_CHECK_PERCENTAGE_VALUE = 7;
 const RESTART_PERCENTAGE_VALUE = 10;
-const FLASH_PERCENTAGE_VALUE = 100 - CONNECTION_PERCENTAGE_VALUE - RESTART_PERCENTAGE_VALUE;
+const FLASH_PERCENTAGE_VALUE = 100 - CONNECTION_PERCENTAGE_VALUE - READY_CHECK_PERCENTAGE_VALUE - RESTART_PERCENTAGE_VALUE;
 
 var firmwareDirectory = path.join(app.getPath('downloads'), 'AudioMothFirmware');
 
@@ -46,7 +48,7 @@ ipcMain.on('set-bar-restarted', () => {
 
     if (flashProgressBar) {
 
-        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + RESTART_PERCENTAGE_VALUE;
+        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + RESTART_PERCENTAGE_VALUE;
 
     }
 
@@ -59,7 +61,7 @@ ipcMain.on('set-bar-restart-progress', (event, val) => {
     if (flashProgressBar) {
 
         percentageComplete = RESTART_PERCENTAGE_VALUE * (val / restartTimeout);
-        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + percentageComplete;
+        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + percentageComplete;
 
     }
 
@@ -73,7 +75,7 @@ ipcMain.on('set-bar-restarting', (event, timeout) => {
 
         flashProgressBar.detail = 'Restarting AudioMoth with new firmware.';
         restartTimeout = timeout;
-        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE;
+        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE;
 
     }
 
@@ -85,7 +87,7 @@ ipcMain.on('set-bar-flashing', () => {
 
     if (flashProgressBar) {
 
-        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE;
+        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE;
 
     }
 
@@ -98,7 +100,7 @@ ipcMain.on('set-bar-msd-flash-progress', (event, val) => {
     if (flashProgressBar) {
 
         percentageComplete = FLASH_PERCENTAGE_VALUE * (val / 100);
-        flashProgressBar.value = percentageComplete + CONNECTION_PERCENTAGE_VALUE;
+        flashProgressBar.value = percentageComplete + CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE;
 
     }
 
@@ -111,7 +113,7 @@ ipcMain.on('set-bar-serial-flash-progress', (event, val) => {
     if (flashProgressBar) {
 
         percentageComplete = FLASH_PERCENTAGE_VALUE * (val / serialFlashMax);
-        flashProgressBar.value = percentageComplete + CONNECTION_PERCENTAGE_VALUE;
+        flashProgressBar.value = percentageComplete + CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE;
 
     }
 
@@ -175,6 +177,28 @@ ipcMain.on('set-bar-info', (event, version, max) => {
 
         detailText += ' to attached device.';
         flashProgressBar.detail = detailText;
+
+    }
+
+});
+
+ipcMain.on('set-bar-serial-ready-check', (event, val) => {
+
+    if (flashProgressBar) {
+
+        flashProgressBar.detail = 'Checking device is ready to be flashed.';
+        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + val;
+
+    }
+
+});
+
+ipcMain.on('set-bar-serial-opening-port', (event, val) => {
+
+    if (flashProgressBar) {
+
+        flashProgressBar.detail = 'Attempting to open port.';
+        flashProgressBar.value = val;
 
     }
 

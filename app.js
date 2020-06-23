@@ -41,6 +41,13 @@ var inFlashableState = false;
 /* Frequency of status check */
 var STATUS_TIMEOUT_LENGTH = 500;
 
+/* Counter for port opening attempts */
+var portOpenReattempts = 0;
+const MAX_PORT_OPEN_ATTEMPTS = 5;
+const PORT_OPEN_ATTEMPT_DELAY = 500;
+
+comms.setPortOpenAttemptsMax(MAX_PORT_OPEN_ATTEMPTS);
+
 electronLog.transports.file.fileName = 'audiomoth_flash.log';
 console.log('Writing log to: ' + electronLog.transports.file.getFile().path);
 
@@ -218,42 +225,27 @@ electron.ipcRenderer.on('flash-success', comms.stopCommunicating);
 /* If a device is found in the serial bootloader, start firmware sending process */
 async function serialWrite (firmwarePath, destructive, version, expectedCRC) {
 
-    var portName, buttonIndex, maxBlocks;
+    var portName, maxBlocks;
 
-    /* Verify user really wants to overwrite the bootloader (if on downloaded pane, 'destructive' will always be false) */
-    if (destructive) {
-
-        buttonIndex = dialog.showMessageBoxSync({
-            type: 'warning',
-            icon: path.join(__dirname, '/icon-64.png'),
-            buttons: ['Yes', 'No'],
-            title: 'Are you sure?',
-            message: 'Overwriting the bootloader with the wrong firmware can render your AudioMoth unuseable. Are you sure you wish to overwrite it?'
-        });
-
-        if (buttonIndex !== 0) {
-
-            electron.ipcRenderer.send('set-bar-aborted');
-            comms.stopCommunicating();
-            return;
-
-        }
-
-        electronLog.log('PERFORMING DESTRUCTIVE WRITE');
-
-    }
+    electronLog.log('--- Starting serial write ---');
 
     /* Calculate max size of progress bar and start */
     maxBlocks = Math.ceil(fs.statSync(firmwarePath).size / comms.BLOCK_SIZE);
 
-    /* Send information to main process to start progress bar */
-    electron.ipcRenderer.send('set-bar-flashing');
-    electron.ipcRenderer.send('set-bar-info', version, maxBlocks);
+    electron.ipcRenderer.send('set-bar-serial-opening-port', portOpenReattempts);
 
     /* Next, attempt to flash using serial bootloader */
     portName = await comms.getAudioMothPortName();
 
     comms.openPort(portName, function () {
+
+        /* Make process end rather than retry in case of port failure, mid-way through flashing */
+        comms.setPortErrorCallback(function () {
+
+            comms.failFlash();
+            comms.stopCommunicating();
+
+        });
 
         electronLog.log('Opened port to send ready query');
 
@@ -266,7 +258,7 @@ async function serialWrite (firmwarePath, destructive, version, expectedCRC) {
 
             } else {
 
-                comms.sendFirmware(contents, destructive, expectedCRC, displayCompleteMessage);
+                comms.sendFirmware(contents, destructive, expectedCRC, displayCompleteMessage, version, maxBlocks);
 
             }
 
@@ -278,7 +270,24 @@ async function serialWrite (firmwarePath, destructive, version, expectedCRC) {
 
     }, function () {
 
-        comms.stopCommunicating();
+        if (portOpenReattempts <= MAX_PORT_OPEN_ATTEMPTS) {
+
+            electronLog.log('Reattempting to open port. Attempt', (portOpenReattempts + 1));
+
+            setTimeout(function () {
+
+                portOpenReattempts++;
+                serialWrite(firmwarePath, destructive, version, expectedCRC);
+
+            }, PORT_OPEN_ATTEMPT_DELAY * Math.pow(2, portOpenReattempts));
+
+        } else {
+
+            electronLog.log('Gave up trying to open port after', portOpenReattempts, 'failed attempts.');
+            comms.displayError('Communication failure.', 'Could not connect to AudioMoth.\nReconnect device and flash again.');
+            comms.stopCommunicating();
+
+        }
 
     });
 
@@ -369,6 +378,8 @@ async function flashButtonOnClick (firmwarePath, destructive, version, expectedC
 
     }
 
+    portOpenReattempts = 0;
+
     /* Check for serial bootloader if device is already in bootloader */
     serialBootloader = await comms.isInBootloader();
 
@@ -420,8 +431,13 @@ async function flashButtonOnClick (firmwarePath, destructive, version, expectedC
 
                         if (serialBootloader) {
 
-                            /* Flash using serial communication */
-                            serialWrite(firmwarePath, destructive, version, expectedCRC);
+                            /* Wait and then flash using serial communication */
+                            setTimeout(function () {
+
+                                serialWrite(firmwarePath, destructive, version, expectedCRC);
+
+                            }, PORT_OPEN_ATTEMPT_DELAY);
+
                             return;
 
                         }
