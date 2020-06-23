@@ -44,6 +44,41 @@ var STATUS_TIMEOUT_LENGTH = 500;
 electronLog.transports.file.fileName = 'audiomoth_flash.log';
 console.log('Writing log to: ' + electronLog.transports.file.getFile().path);
 
+electron.ipcRenderer.on('logfile', function () {
+
+    var srcLogLocation, destLogLocation;
+
+    srcLogLocation = electronLog.transports.file.getFile().path;
+
+    destLogLocation = dialog.showSaveDialogSync({
+        title: 'Save log',
+        nameFieldLabel: 'Log location',
+        defaultPath: electronLog.transports.file.fileName,
+        filters: [{
+            name: 'log',
+            extensions: ['log']
+        }]
+    });
+
+    if (destLogLocation) {
+
+        electronLog.log('Saving log...');
+
+        fs.copyFile(srcLogLocation, destLogLocation, function (err) {
+
+            if (err) {
+
+                electronLog.log('Failed to save log: ');
+                electronLog.err(err);
+
+            }
+
+        });
+
+    }
+
+});
+
 /* Enable flash buttons based on whether or not the app and connected device are in a state which permits flashing */
 function updateFlashButtonState () {
 

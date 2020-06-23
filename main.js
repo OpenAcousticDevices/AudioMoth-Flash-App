@@ -449,6 +449,14 @@ app.on('ready', function () {
 
             }
         }, {
+            label: 'Save Log File',
+            accelerator: 'CommandOrControl+L',
+            click: function () {
+
+                mainWindow.webContents.send('logfile');
+
+            }
+        }, {
             type: 'separator'
         }, {
             label: 'Open Acoustic Devices Website',
