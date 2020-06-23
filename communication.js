@@ -1155,7 +1155,7 @@ function readyCheck (sendBuffer, expectedCRC, isDestructive, successCallback, ve
 
             readyTimeout = setTimeout(function () {
 
-                readyCheck(sendBuffer, expectedCRC, isDestructive, successCallback);
+                readyCheck(sendBuffer, expectedCRC, isDestructive, successCallback, version, maxBlocks);
 
             }, READY_CHECK_DELAY_LENGTH * Math.pow(2, readyCheckCount));
 
