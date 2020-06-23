@@ -216,6 +216,8 @@ function displayCompleteMessage (message) {
     message = (!message) ? 'Firmware has been successfully updated.' : message;
     electron.ipcRenderer.send('set-bar-completed', message);
 
+    electronLog.log('--- Firmware write complete ---');
+
 }
 
 /* Re-enable the status box when the progress window closes */
@@ -310,13 +312,15 @@ function msdWrite (firmwarePath, destructive, version) {
             icon: path.join(__dirname, '/icon-64.png'),
             title: 'Cannot overwrite bootloader.',
             buttons: ['OK'],
-            message: 'The USB drive bootloader cannot be overwritten with this application.'
+            message: 'You are trying to overwrite a USB drive bootloader. You cannot do this with this application.'
         });
 
         comms.stopCommunicating();
         return;
 
     }
+
+    electronLog.log('--- Starting MSD write ---');
 
     /* Send version of firmware being written to main process */
     electron.ipcRenderer.send('set-bar-info', version);

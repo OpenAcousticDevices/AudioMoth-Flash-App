@@ -588,8 +588,6 @@ async function send (buffer, expectedLength, regex, callback) {
 
     });
 
-    electronLog.log('Setting timeout');
-
     responseTimeout = setTimeout(function () {
 
         electronLog.error('Timed out waiting for response');
@@ -825,7 +823,7 @@ async function serialRestartTimer (message, successCallback) {
 
 function resetFailure (message) {
 
-    electronLog.log('Reset failed, closing port');
+    electronLog.error('Reset failed, closing port');
 
     closePort();
 
@@ -908,10 +906,12 @@ function crcCheck (expectedCRC, isDestructive, successCallback) {
 
                 if (receivedCRC === expectedCRC) {
 
-                    electronLog.log('Resetting device');
+                    electronLog.log('Flash CRC was correct, resetting device');
                     checkSerialComplete('Firmware has been successfully updated.', successCallback);
 
                 } else {
+
+                    electronLog.error('Flash CRC was incorrect, ending communication');
 
                     errorString = 'Flash CRC did not match.\n';
                     errorString += 'Expected ' + expectedCRC + ' but received ' + receivedCRC + '\n';
@@ -1090,7 +1090,8 @@ function sendFirmwareData (expectedCRC, isDestructive, successCallback) {
 
             } else {
 
-                electronLog.log('NAK received, resending');
+                electronLog.log('Resending packet');
+
                 if (port.isOpen) {
 
                     port.flush();
