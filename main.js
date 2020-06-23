@@ -276,7 +276,7 @@ function shrinkWindowHeight (windowHeight) {
 
     if (process.platform === 'darwin') {
 
-        windowHeight -= 25;
+        windowHeight -= 20;
 
     } else if (process.platform === 'linux') {
 
@@ -370,7 +370,7 @@ app.on('ready', function () {
 
     }
 
-    windowHeight = shrinkWindowHeight(460);
+    windowHeight = shrinkWindowHeight(450);
 
     mainWindow = new BrowserWindow({
         width: 565,
