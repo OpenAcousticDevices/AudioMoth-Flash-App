@@ -353,7 +353,7 @@ function msdWrite (firmwarePath, destructive, version) {
 
 async function flashButtonOnClick (firmwarePath, destructive, version, expectedCRC) {
 
-    var serialBootloader, msdPath;
+    var serialBootloader, msdPath, buttonIndex, fileRegex, regexResult;
 
     /* If the app is already communicating with the device, don't try overriding it */
     if (comms.isCommunicating()) {
@@ -368,6 +368,53 @@ async function flashButtonOnClick (firmwarePath, destructive, version, expectedC
     statusDiv.innerHTML = 'Communicating with AudioMoth.';
     inFlashableState = false;
     updateFlashButtonState();
+
+    /* Verify user really wants to overwrite the bootloader (if on downloaded pane, 'destructive' will always be false) */
+    if (destructive) {
+
+        fileRegex = new RegExp(/(audiomoth)?\d.\d.\d\.bin/);
+
+        regexResult = fileRegex.exec(path.basename(firmwarePath.toLowerCase()));
+
+        if (regexResult) {
+
+            dialog.showMessageBox({
+                type: 'error',
+                icon: path.join(__dirname, '/icon-64.png'),
+                title: 'Cannot overwrite bootloader.',
+                buttons: ['OK'],
+                message: 'You are trying to overwrite the bootloader with a standard release of AudioMoth firmware.\nYou cannot do this with this application.'
+            });
+
+            electron.ipcRenderer.send('set-bar-aborted');
+            comms.stopCommunicating();
+            return;
+
+        } else {
+
+            buttonIndex = dialog.showMessageBoxSync({
+                type: 'warning',
+                icon: path.join(__dirname, '/icon-64.png'),
+                buttons: ['Yes', 'No'],
+                title: 'Are you sure?',
+                message: 'You are about to overwrite the bootloader. This should only be done with specific versions of firmware.\nAre you sure you want to do this?'
+            });
+
+            if (buttonIndex !== 0) {
+
+                electron.ipcRenderer.send('set-bar-aborted');
+                comms.stopCommunicating();
+                return;
+
+            } else {
+
+                electronLog.log('PERFORMING DESTRUCTIVE WRITE');
+
+            }
+
+        }
+
+    }
 
     /* Open progress bar */
     electron.ipcRenderer.send('start-bar');
@@ -601,3 +648,29 @@ updateStatusText();
 
 /* Retrieve list of firmware releases from the OAD Github page */
 firmwareInterface.getReleases(firmwareInterface.prepareUI);
+
+destructiveCheckbox.addEventListener('change', function (e) {
+
+    var buttonIndex;
+
+    if (!destructiveCheckbox.checked) {
+
+        return;
+
+    }
+
+    buttonIndex = dialog.showMessageBoxSync({
+        type: 'warning',
+        icon: path.join(__dirname, '/icon-64.png'),
+        buttons: ['Yes', 'No'],
+        title: 'Are you sure?',
+        message: 'Overwriting the bootloader with the wrong firmware can render your AudioMoth unusable.\nAre you sure you want to do this?'
+    });
+
+    if (buttonIndex !== 0) {
+
+        destructiveCheckbox.checked = false;
+
+    }
+
+});
