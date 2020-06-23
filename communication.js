@@ -1078,7 +1078,6 @@ function sendFirmwareData (expectedCRC, isDestructive, successCallback) {
 
         } else {
 
-            // electronLog.log(sendBuffer);
             electronLog.log(blockNumber + ' / ' + splitBuffers.length);
 
             if (response) {
