@@ -652,7 +652,6 @@ function openPort (name, openCallback, closeCallback, errorCallback) {
     port.on('error', function (err) {
 
         electronLog.error(err);
-        displayError('Failed to open port.', 'Could not connect to AudioMoth.\nReconnect device and flash again.');
 
         if (portErrorCallback) {
 
