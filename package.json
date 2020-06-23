@@ -68,7 +68,7 @@
     "electron-dl": "^1.14.0",
     "electron-log": "^4.0.6",
     "electron-progressbar": "^1.2.0",
-    "jquery": "^3.4.1",
+    "jquery": "^3.5.1",
     "popper.js": "^1.15.0",
     "serialport": "^8.0.7",
     "showdown": "^1.9.1"
