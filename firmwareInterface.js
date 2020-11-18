@@ -6,6 +6,8 @@
 
 'use strict';
 
+/* global XMLHttpRequest */
+
 const electron = require('electron');
 const dialog = electron.remote.dialog;
 const app = electron.remote.app;

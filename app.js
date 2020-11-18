@@ -17,6 +17,7 @@ const electronLog = require('electron-log');
 
 const firmwareInterface = require('./firmwareInterface.js');
 const comms = require('./communication.js');
+const versionChecker = require('./versionChecker.js');
 
 /* File size limits for local binary files */
 const MAX_FILE_SIZE = 256 * 1024 - 0x4000;
@@ -573,11 +574,11 @@ flashButtonLocal.addEventListener('click', function () {
 
 /* File select button for local firmware files */
 
-function selectBinary () {
+async function selectBinary () {
 
-    var isValid;
+    var isValid, filenames;
 
-    dialog.showOpenDialog({
+    filenames = await dialog.showOpenDialog({
         title: 'Select firmware binary',
         nameFieldLabel: 'Binary file',
         multiSelections: false,
@@ -585,26 +586,24 @@ function selectBinary () {
             name: 'bin',
             extensions: ['bin']
         }]
-    }, async function (filenames) {
+    });
 
-        if (filenames) {
+    if (filenames) {
 
-            /* Check if binary is a valid firmware file */
-            isValid = await firmwareInterface.isFirmwareFile(filenames[0]);
+        /* Check if binary is a valid firmware file */
+        isValid = await firmwareInterface.isFirmwareFile(filenames.filePaths[0]);
 
-            if (isValid) {
+        if (isValid) {
 
-                firmwareInterface.updateFirmwareDirectoryDisplay(filenames[0]);
+            firmwareInterface.updateFirmwareDirectoryDisplay(filenames.filePaths[0]);
 
-            } else {
+        } else {
 
-                comms.displayError('Invalid binary', 'Chosen firmware binary is not valid AudioMoth firmware.\nSelect a different file and try again.');
-
-            }
+            comms.displayError('Invalid binary', 'Chosen firmware binary is not valid AudioMoth firmware.\nSelect a different file and try again.');
 
         }
 
-    });
+    }
 
 }
 
@@ -640,6 +639,55 @@ function updateStatusText () {
     }
 
 }
+
+electron.ipcRenderer.on('update-check', function () {
+
+    versionChecker.checkLatestRelease(function (response) {
+
+        var buttonIndex;
+
+        if (response.error) {
+
+            console.error(response.error);
+
+            dialog.showMessageBox(electron.remote.getCurrentWindow(), {
+                type: 'error',
+                title: 'Failed to check for updates',
+                message: response.error
+            });
+
+            return;
+
+        }
+
+        if (response.updateNeeded === false) {
+
+            dialog.showMessageBox(electron.remote.getCurrentWindow(), {
+                type: 'info',
+                title: 'Update not needed',
+                message: 'Your app is on the latest version (' + response.latestVersion + ').'
+            });
+
+            return;
+
+        }
+
+        buttonIndex = dialog.showMessageBoxSync({
+            type: 'warning',
+            buttons: ['Yes', 'No'],
+            title: 'Are you sure?',
+            message: 'A newer version of this app is available (' + response.latestVersion + '), would you like to download it?'
+        });
+
+        if (buttonIndex === 0) {
+
+            electron.shell.openExternal('https://www.openacousticdevices.info/applications');
+
+        }
+
+    });
+
+});
 
 /* Prepare UI */
 

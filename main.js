@@ -481,6 +481,13 @@ app.on('ready', function () {
 
             }
         }, {
+            label: 'Check For Updates',
+            click: function () {
+
+                mainWindow.webContents.send('update-check');
+
+            }
+        }, {
             type: 'separator'
         }, {
             label: 'Open Acoustic Devices Website',

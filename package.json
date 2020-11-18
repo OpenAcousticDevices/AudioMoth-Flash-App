@@ -1,10 +1,14 @@
 {
   "name": "AudioMoth-Flash",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "The flashing app used to apply firmware to the AudioMoth acoustic monitoring device.",
   "main": "main.js",
   "author": "openacousticdevices.info",
   "license": "ISC",
+  "repository": {
+    "type" : "git",
+    "url" : "https://github.com/OpenAcousticDevices/AudioMoth-Flash-App.git"
+  },
   "scripts": {
     "postinstall": "install-app-deps",
     "start": "electron .",
@@ -51,26 +55,26 @@
     }
   },
   "devDependencies": {
-    "electron": "6.0.1",
-    "electron-builder": "^21.2.0",
-    "eslint": "^6.7.2",
-    "eslint-config-standard": "^14.1.0",
-    "eslint-plugin-import": "^2.19.1",
+    "electron": "8.5.2",
+    "electron-builder": "^22.8.1",
+    "eslint": "^6.8.0",
+    "eslint-config-standard": "^14.1.1",
+    "eslint-plugin-import": "^2.22.1",
     "eslint-plugin-node": "^10.0.0",
     "eslint-plugin-promise": "^4.2.1",
-    "eslint-plugin-standard": "^4.0.1"
+    "eslint-plugin-standard": "^4.0.2"
   },
   "dependencies": {
-    "audiomoth-hid": "^2.0.4",
+    "audiomoth-hid": "^2.1.0",
     "bootstrap": "4.3.1",
-    "drivelist": "^8.0.7",
+    "drivelist": "9.1.0",
     "electron-debug": "3.0.1",
     "electron-dl": "^1.14.0",
-    "electron-log": "^4.0.6",
+    "electron-log": "^4.3.0",
     "electron-progressbar": "^1.2.0",
     "jquery": "^3.5.1",
     "popper.js": "^1.15.0",
-    "serialport": "^8.0.7",
+    "serialport": "^8.0.8",
     "showdown": "^1.9.1"
   },
   "engines": {
