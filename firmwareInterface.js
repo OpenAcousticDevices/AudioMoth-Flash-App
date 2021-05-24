@@ -22,31 +22,31 @@ const electronLog = require('electron-log');
 showdown.setOption('simpleLineBreaks', true);
 
 /* Directory where downloaded firmware is stored */
-var firmwareDirectory = path.join(app.getPath('downloads'), 'AudioMothFirmware');
+const firmwareDirectory = path.join(app.getPath('downloads'), 'AudioMothFirmware');
 exports.firmwareDirectory = firmwareDirectory;
 
 /* JSON file backing up all release information */
-var localReleaseFileDirectory = path.join(app.getPath('userData'), 'releases.json');
+const localReleaseFileDirectory = path.join(app.getPath('userData'), 'releases.json');
 
 /* Location of selected local firmware file */
 var localFirmwareDirectory = '';
 
 /* UI elements */
-var releaseDescriptionSpan = document.getElementById('release-description-span');
-var versionSelect = document.getElementById('version-select');
+const releaseDescriptionSpan = document.getElementById('release-description-span');
+const versionSelect = document.getElementById('version-select');
 
-var downloadButton = document.getElementById('download-button');
+const downloadButton = document.getElementById('download-button');
 
-var flashButtonDownloaded = document.getElementById('flash-button0');
-var flashButtonLocal = document.getElementById('flash-button1');
+const flashButtonDownloaded = document.getElementById('flash-button0');
+const flashButtonLocal = document.getElementById('flash-button1');
 
-var downloadTab = document.getElementById('download-tab');
-var localTab = document.getElementById('local-tab');
+const downloadTab = document.getElementById('download-tab');
+const localTab = document.getElementById('local-tab');
 
-var downloadTabLink = document.getElementById('download-tab-link');
-var localTabLink = document.getElementById('local-tab-link');
+const downloadTabLink = document.getElementById('download-tab-link');
+const localTabLink = document.getElementById('local-tab-link');
 
-var fileLabel = document.getElementById('file-label');
+const fileLabel = document.getElementById('file-label');
 
 /* Array of release information objects */
 var releases = [];
@@ -93,13 +93,11 @@ exports.getSelectedFirmwareVersion = getSelectedFirmwareVersion;
 
 function getSelectedFirmwareCRC () {
 
-    var releaseBody, regex, regexResult, releaseCRC;
+    const releaseBody = getRelease(getSelectedIndex()).body;
 
-    releaseBody = getRelease(getSelectedIndex()).body;
-
-    regex = /\*\*Flash CRC\*\*: [A-Z0-9]{4}/;
-    regexResult = regex.exec(releaseBody);
-    releaseCRC = regexResult[0].substr(regexResult[0].length - 4, 4);
+    const regex = /\*\*Flash CRC\*\*: [A-Z0-9]{4}/;
+    const regexResult = regex.exec(releaseBody);
+    const releaseCRC = regexResult[0].substr(regexResult[0].length - 4, 4);
 
     return releaseCRC;
 
@@ -121,19 +119,17 @@ exports.getCurrentFirmwareDirectory = getCurrentFirmwareDirectory;
 
 function fillDescription (i) {
 
-    var publishDate, day, monthNum, month, publishDateString, converter;
-
-    publishDate = new Date(releases[i].published_at);
-    day = (publishDate.getDate() > 9) ? publishDate.getDate() : '0' + publishDate.getDate();
-    monthNum = publishDate.getMonth() + 1;
-    month = (monthNum > 9) ? monthNum : '0' + monthNum;
-    publishDateString = day + '/' + month + '/' + publishDate.getFullYear();
+    const publishDate = new Date(releases[i].published_at);
+    const day = (publishDate.getDate() > 9) ? publishDate.getDate() : '0' + publishDate.getDate();
+    const monthNum = publishDate.getMonth() + 1;
+    const month = (monthNum > 9) ? monthNum : '0' + monthNum;
+    const publishDateString = day + '/' + month + '/' + publishDate.getFullYear();
 
     releaseDescriptionSpan.innerHTML = '</br><p><b>Version:</b> ' + releases[i].name + '</p>';
     releaseDescriptionSpan.innerHTML += '<p><b>Date released:</b> ' + publishDateString + '</p>';
     releaseDescriptionSpan.innerHTML += '<b>Changes:</b>';
 
-    converter = new showdown.Converter();
+    const converter = new showdown.Converter();
     releaseDescriptionSpan.innerHTML += converter.makeHtml(releases[i].body);
 
 }
@@ -142,11 +138,9 @@ function fillDescription (i) {
 
 function fillVersionList () {
 
-    var option;
-
     for (let i = 0; i < releases.length; i++) {
 
-        option = document.createElement('option');
+        const option = document.createElement('option');
         option.text = releases[i].name;
         versionSelect.add(option);
 
@@ -170,7 +164,7 @@ function isDownloaded (index) {
 
 /* Check if selected firmware has been downloaded */
 
-exports.isSelectionDownloaded = function () {
+exports.isSelectionDownloaded = () => {
 
     return isDownloaded(versionSelect.selectedIndex);
 
@@ -198,7 +192,7 @@ function updateDownloadButton (index) {
 
 /* Get the path of the selected local firmware file */
 
-exports.getLocalFirmwarePath = function () {
+exports.getLocalFirmwarePath = () => {
 
     return localFirmwareDirectory;
 
@@ -208,11 +202,9 @@ exports.getLocalFirmwarePath = function () {
 
 function isFirmwareFile (directory) {
 
-    var contents;
-
     return new Promise(function (resolve) {
 
-        contents = fs.readFileSync(directory);
+        const contents = fs.readFileSync(directory);
 
         if (!contents) {
 
@@ -259,7 +251,7 @@ function setUIDisabled (setting) {
 
 /* Update UI when a new firmware version is selected */
 
-versionSelect.addEventListener('change', function () {
+versionSelect.addEventListener('change', () => {
 
     fillDescription(versionSelect.selectedIndex);
     updateDownloadButtonForSelectedFirmware();
@@ -270,15 +262,13 @@ versionSelect.addEventListener('change', function () {
 
 function downloadFirmware (index) {
 
-    var release, fileName, url;
-
     /* If the user's computer has no internet access */
     if (!navigator.onLine) {
 
         dialog.showMessageBox({
             type: 'error',
             icon: path.join(__dirname, '/icon-64.png'),
-            title: 'No internet connection!',
+            title: 'No internet connection',
             buttons: ['OK'],
             message: 'Could not connect to the Open Acoustic Devices server to download the requested firmware.'
         });
@@ -295,18 +285,18 @@ function downloadFirmware (index) {
         dialog.showMessageBox({
             type: 'info',
             icon: path.join(__dirname, '/icon-64.png'),
-            title: 'Created firmware folder.',
+            title: 'Created firmware folder',
             buttons: ['OK'],
-            message: 'Created folder to contain firmware at \n' + firmwareDirectory
+            message: 'Created folder to contain firmware at ' + firmwareDirectory
         });
 
     }
 
     updateFolderButton();
 
-    release = releases[index];
-    fileName = release.name + '.bin';
-    url = release.browser_download_url;
+    const release = releases[index];
+    const fileName = release.name + '.bin';
+    const url = release.browser_download_url;
 
     downloadButton.innerHTML = 'Downloading';
     downloadButton.disabled = true;
@@ -323,7 +313,7 @@ function downloadFirmware (index) {
 
 /* Download the selected firmware version from Github */
 
-downloadButton.addEventListener('click', function () {
+downloadButton.addEventListener('click', () => {
 
     downloadFirmware(versionSelect.selectedIndex);
 
@@ -347,9 +337,9 @@ function downloadFirmwareFailure () {
     dialog.showMessageBox({
         type: 'error',
         icon: path.join(__dirname, '/icon-64.png'),
-        title: 'Download failed.',
+        title: 'Download failed',
         buttons: ['OK'],
-        message: 'Failed to download firmware file.\nCheck connection and try again.'
+        message: 'Failed to download firmware file. Check connection and try again.'
     });
 
     updateDownloadButtonForSelectedFirmware();
@@ -398,10 +388,10 @@ function loadLocalReleaseFile (err, data) {
         dialog.showMessageBox({
             type: 'error',
             icon: path.join(__dirname, '/icon-64.png'),
-            title: 'No local release information.',
+            title: 'No local release information',
             buttons: ['OK'],
-            message: 'Failed to load local release information.\nConnect to the internet and reopen application to download additional firmware.'
-        }, function () {
+            message: 'Failed to load local release information. Connect to the internet and reopen application to download additional firmware.'
+        }, () => {
 
             flashButtonDownloaded.disabled = true;
             downloadButton.disabled = true;
@@ -435,10 +425,10 @@ function remoteReleaseFailure (err) {
     dialog.showMessageBox({
         type: 'error',
         icon: path.join(__dirname, '/icon-64.png'),
-        title: 'Connection error.',
+        title: 'Connection error',
         buttons: ['OK'],
-        message: 'Failed to download latest release list.\nAttempting to use local list instead.'
-    }, function () {
+        message: 'Failed to download latest release list. Attempting to use local list instead.'
+    }, () => {
 
         fs.readFile(localReleaseFileDirectory, loadLocalReleaseFile);
 
@@ -450,10 +440,9 @@ function remoteReleaseFailure (err) {
 
 function sortSemanticVersion (a, b) {
 
-    var aVersion, bVersion, aVersionNum, bVersionNum;
-
-    aVersion = a.name.split('.');
-    bVersion = b.name.split('.');
+    const aVersion = a.name.split('.');
+    const bVersion = b.name.split('.');
+    let aVersionNum, bVersionNum;
 
     for (let i = 0; i < aVersion.length; i++) {
 
@@ -478,11 +467,9 @@ function sortSemanticVersion (a, b) {
 
 /* Attempt to pull release information from Github */
 
-exports.getReleases = function (callback) {
+exports.getReleases = (callback) => {
 
-    var xmlHttp, url, responseJson;
-
-    url = 'https://api.github.com/repos/OpenAcousticDevices/AudioMoth-Firmware-Basic/releases';
+    const url = 'https://api.github.com/repos/OpenAcousticDevices/AudioMoth-Firmware-Basic/releases';
 
     if (!navigator.onLine) {
 
@@ -491,14 +478,14 @@ exports.getReleases = function (callback) {
 
     }
 
-    xmlHttp = new XMLHttpRequest();
+    const xmlHttp = new XMLHttpRequest();
     xmlHttp.open('GET', url, true);
 
-    xmlHttp.onload = function () {
+    xmlHttp.onload = () => {
 
         if (xmlHttp.status === 200) {
 
-            responseJson = JSON.parse(xmlHttp.responseText);
+            const responseJson = JSON.parse(xmlHttp.responseText);
 
             releases = [];
 
@@ -533,7 +520,7 @@ exports.getReleases = function (callback) {
 
 /* Switch to downloaded firmware tab */
 
-downloadTabLink.addEventListener('click', function () {
+downloadTabLink.addEventListener('click', () => {
 
     flashButtonLocal.style.display = 'none';
     flashButtonDownloaded.style.display = '';
@@ -542,7 +529,7 @@ downloadTabLink.addEventListener('click', function () {
 
 /* Switch to local firmware tab */
 
-localTabLink.addEventListener('click', function () {
+localTabLink.addEventListener('click', () => {
 
     flashButtonDownloaded.style.display = 'none';
     flashButtonLocal.style.display = '';

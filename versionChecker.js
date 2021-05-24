@@ -10,13 +10,13 @@
 
 const electron = require('electron');
 
-var pjson = require('./package.json');
+const pjson = require('./package.json');
 
 /* Compare two semantic versions and return true if older */
 
 function isOlderSemanticVersion (aVersion, bVersion) {
 
-    var aVersionNum, bVersionNum;
+    let aVersionNum, bVersionNum;
 
     for (let i = 0; i < aVersion.length; i++) {
 
@@ -41,54 +41,58 @@ function isOlderSemanticVersion (aVersion, bVersion) {
 
 /* Check current app version in package.json against latest version in repository's releases */
 
-exports.checkLatestRelease = function (callback) {
+exports.checkLatestRelease = (callback) => {
 
-    var version, repoGitURL, repoURL, xmlHttp, responseJson, latestVersion, updateNeeded;
+    let response;
 
     /* Check for internet connection */
 
     if (!navigator.onLine) {
 
-        callback({updateNeeded: false, error: 'No internet connection, failed to request app version information.'});
+        response = {updateNeeded: false, error: 'No internet connection, failed to request app version information.'};
+        callback(response);
         return;
 
     }
 
-    version = electron.remote.app.getVersion();
+    const version = electron.remote.app.getVersion();
 
     /* Transform repository URL into release API URL */
 
-    repoGitURL = pjson.repository.url;
-    repoURL = repoGitURL.replace('.git', '/releases');
+    const repoGitURL = pjson.repository.url;
+    let repoURL = repoGitURL.replace('.git', '/releases');
     repoURL = repoURL.replace('github.com', 'api.github.com/repos');
 
-    xmlHttp = new XMLHttpRequest();
+    const xmlHttp = new XMLHttpRequest();
     xmlHttp.open('GET', repoURL, true);
 
-    xmlHttp.onload = function () {
+    xmlHttp.onload = () => {
 
         if (xmlHttp.status === 200) {
 
-            responseJson = JSON.parse(xmlHttp.responseText);
+            const responseJson = JSON.parse(xmlHttp.responseText);
 
-            latestVersion = responseJson[0].tag_name;
+            const latestVersion = responseJson[0].tag_name;
 
             console.log('Comparing latest release (' + latestVersion + ') with currently installed version (' + version + ')');
 
             /* Compare current version in package.json to latest version pulled from Github */
 
-            updateNeeded = isOlderSemanticVersion(version, latestVersion);
+            const updateNeeded = isOlderSemanticVersion(version, latestVersion);
 
-            callback({updateNeeded: updateNeeded, latestVersion: updateNeeded ? latestVersion : version});
+            response = {updateNeeded: updateNeeded, latestVersion: updateNeeded ? latestVersion : version};
+            callback(response);
 
         }
 
     };
 
-    xmlHttp.onerror = function () {
+    xmlHttp.onerror = () => {
 
         console.error('Failed to pull release information.');
-        callback({updateNeeded: false, error: 'HTTP connection error, failed to request app version information.'});
+
+        response = {updateNeeded: false, error: 'HTTP connection error, failed to request app version information.'};
+        callback(response);
 
     };
 

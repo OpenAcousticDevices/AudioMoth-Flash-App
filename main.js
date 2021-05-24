@@ -56,11 +56,9 @@ ipcMain.on('set-bar-restarted', () => {
 
 ipcMain.on('set-bar-restart-progress', (event, val) => {
 
-    var percentageComplete;
-
     if (flashProgressBar) {
 
-        percentageComplete = RESTART_PERCENTAGE_VALUE * (val / restartTimeout);
+        const percentageComplete = RESTART_PERCENTAGE_VALUE * (val / restartTimeout);
         flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + percentageComplete;
 
     }
@@ -73,9 +71,19 @@ ipcMain.on('set-bar-restarting', (event, timeout) => {
 
     if (flashProgressBar) {
 
-        flashProgressBar.detail = 'Restarting AudioMoth with new firmware.';
+        flashProgressBar.detail = 'Restarting AudioMoth.';
         restartTimeout = timeout;
         flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE;
+
+    }
+
+});
+
+ipcMain.on('set-bar-checking-bootloader', () => {
+
+    if (flashProgressBar) {
+
+        flashProgressBar.detail = 'Checking if bootloader needs updating.';
 
     }
 
@@ -95,11 +103,9 @@ ipcMain.on('set-bar-flashing', () => {
 
 ipcMain.on('set-bar-msd-flash-progress', (event, val) => {
 
-    var percentageComplete;
-
     if (flashProgressBar) {
 
-        percentageComplete = FLASH_PERCENTAGE_VALUE * (val / 100);
+        const percentageComplete = FLASH_PERCENTAGE_VALUE * (val / 100);
         flashProgressBar.value = percentageComplete + CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE;
 
     }
@@ -108,25 +114,54 @@ ipcMain.on('set-bar-msd-flash-progress', (event, val) => {
 
 ipcMain.on('set-bar-serial-flash-progress', (event, val) => {
 
-    var percentageComplete;
-
     if (flashProgressBar) {
 
-        percentageComplete = FLASH_PERCENTAGE_VALUE * (val / serialFlashMax);
+        const percentageComplete = FLASH_PERCENTAGE_VALUE * (val / serialFlashMax);
         flashProgressBar.value = percentageComplete + CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE;
 
     }
 
 });
 
-ipcMain.on('set-bar-completed', (event, message) => {
+ipcMain.on('reset-bar', () => {
+
+    if (!flashProgressBar) {
+
+        return;
+
+    }
+
+    flashProgressBar.value = 0;
+
+});
+
+ipcMain.on('set-bar-bootloader-update-completed', () => {
+
+    console.log('Setting bar to completed. Waiting before start requested flash.');
+
+    if (flashProgressBar) {
+
+        flashProgressBar.value = 100;
+        flashProgressBar.detail = 'Bootloader update complete.';
+
+        setTimeout(function () {
+
+            mainWindow.webContents.send('bootloader-update-success');
+
+        }, 3000);
+
+    }
+
+});
+
+ipcMain.on('set-bar-completed', () => {
 
     console.log('Setting bar to completed. Waiting before closing progress bar window.');
 
     if (flashProgressBar) {
 
         flashProgressBar.setCompleted();
-        flashProgressBar.detail = message;
+        flashProgressBar.detail = 'Firmware has been successfully updated.';
 
         setTimeout(function () {
 
@@ -153,9 +188,7 @@ ipcMain.on('set-bar-aborted', () => {
 
 });
 
-ipcMain.on('set-bar-info', (event, version, max) => {
-
-    var detailText;
+ipcMain.on('set-bar-info', (event, infoText, max) => {
 
     if (flashProgressBar) {
 
@@ -166,17 +199,7 @@ ipcMain.on('set-bar-info', (event, version, max) => {
 
         }
 
-        detailText = 'Applying firmware';
-
-        if (version) {
-
-            console.log('Setting version info:', version);
-            detailText += ' version ' + version;
-
-        }
-
-        detailText += ' to attached device.';
-        flashProgressBar.detail = detailText;
+        flashProgressBar.detail = infoText;
 
     }
 
@@ -204,7 +227,7 @@ ipcMain.on('set-bar-serial-opening-port', (event, val) => {
 
 });
 
-ipcMain.on('start-bar', (event) => {
+ipcMain.on('start-bar', () => {
 
     if (flashProgressBar) {
 
@@ -224,7 +247,8 @@ ipcMain.on('start-bar', (event) => {
                 nodeIntegration: true
             }
         },
-        maxValue: 100
+        /* When a progress bar reaches 100, the value is locked. So to allow the bar to fill when updating the bootloader and then again for the flash, it fills to 100/101 initially. */
+        maxValue: 101
     });
 
     /* 'closable' option is not implemented on Linux, so block close action */
@@ -236,7 +260,7 @@ ipcMain.on('start-bar', (event) => {
 
     console.log('Bar created.');
 
-    flashProgressBar.on('aborted', function () {
+    flashProgressBar.on('aborted', () => {
 
         console.log('Flash bar aborted');
         flashProgressBar = null;
@@ -249,7 +273,7 @@ ipcMain.on('start-bar', (event) => {
 
 function onDownloadStarted (downloadItem) {
 
-    downloadItem.once('done', function (event, state) {
+    downloadItem.once('done', (event, state) => {
 
         if (state === 'completed') {
 
@@ -276,7 +300,7 @@ function onDownloadStarted (downloadItem) {
 
 }
 
-function onDownloadCancel (downloadItem) {
+function onDownloadCancel () {
 
     mainWindow.webContents.send('download-failure');
 
@@ -284,7 +308,7 @@ function onDownloadCancel (downloadItem) {
 
 ipcMain.on('download-item', async (event, {url, fileName, directory}) => {
 
-    var win = mainWindow;
+    const win = mainWindow;
 
     console.log(await electronDL.download(win, url, {
         filename: fileName,
@@ -314,7 +338,7 @@ function shrinkWindowHeight (windowHeight) {
 
 function openInstructionsWindow () {
 
-    var iconLocation = '/build/icon.ico';
+    let iconLocation = '/build/icon.ico';
 
     if (process.platform === 'linux') {
 
@@ -338,7 +362,7 @@ function openInstructionsWindow () {
     instructionsWindow.setMenu(null);
     instructionsWindow.loadURL(path.join('file://', __dirname, '/instructions/instructions.html'));
 
-    instructionsWindow.on('closed', function () {
+    instructionsWindow.on('closed', () => {
 
         instructionsWindow = null;
 
@@ -350,7 +374,7 @@ ipcMain.on('open-instructions', openInstructionsWindow);
 
 function openAboutWindow () {
 
-    var iconLocation = '/build/icon.ico';
+    let iconLocation = '/build/icon.ico';
 
     if (process.platform === 'linux') {
 
@@ -374,7 +398,7 @@ function openAboutWindow () {
     aboutWindow.setMenu(null);
     aboutWindow.loadURL(path.join('file://', __dirname, '/about.html'));
 
-    aboutWindow.on('closed', function () {
+    aboutWindow.on('closed', () => {
 
         aboutWindow = null;
 
@@ -382,11 +406,9 @@ function openAboutWindow () {
 
 }
 
-app.on('ready', function () {
+app.on('ready', () => {
 
-    var menuTemplate, menu, iconLocation, windowHeight;
-
-    iconLocation = '/build/icon.ico';
+    let iconLocation = '/build/icon.ico';
 
     if (process.platform === 'linux') {
 
@@ -394,7 +416,7 @@ app.on('ready', function () {
 
     }
 
-    windowHeight = shrinkWindowHeight(450);
+    const windowHeight = shrinkWindowHeight(450);
 
     mainWindow = new BrowserWindow({
         width: 565,
@@ -409,7 +431,7 @@ app.on('ready', function () {
         }
     });
 
-    mainWindow.on('restore', function () {
+    mainWindow.on('restore', () => {
 
         /* When minimised and restored, Windows platforms alter the BrowserWindow such that the height no longer includes the menu bar */
         /* This resize cannot be blocked so this fix resizes it, taking into account the menu change */
@@ -421,13 +443,13 @@ app.on('ready', function () {
 
     });
 
-    menuTemplate = [{
+    const menuTemplate = [{
         label: 'File',
         submenu: [{
             label: 'Open Downloads Folder',
             id: 'downloadFolder',
             accelerator: 'CommandOrControl+O',
-            click: function () {
+            click: () => {
 
                 if (fs.existsSync(firmwareDirectory)) {
 
@@ -439,7 +461,7 @@ app.on('ready', function () {
         }, {
             label: 'Show Manual Switch Instructions',
             accelerator: 'CommandOrControl+I',
-            click: function () {
+            click: () => {
 
                 if (!instructionsWindow) {
 
@@ -453,7 +475,7 @@ app.on('ready', function () {
         }, {
             label: 'Quit',
             accelerator: 'CommandOrControl+Q',
-            click: function () {
+            click: () => {
 
                 app.quit();
 
@@ -463,7 +485,7 @@ app.on('ready', function () {
         label: 'Help',
         submenu: [{
             label: 'About',
-            click: function () {
+            click: () => {
 
                 if (!aboutWindow) {
 
@@ -475,14 +497,14 @@ app.on('ready', function () {
         }, {
             label: 'Save Log File',
             accelerator: 'CommandOrControl+L',
-            click: function () {
+            click: () => {
 
                 mainWindow.webContents.send('logfile');
 
             }
         }, {
             label: 'Check For Updates',
-            click: function () {
+            click: () => {
 
                 mainWindow.webContents.send('update-check');
 
@@ -491,7 +513,7 @@ app.on('ready', function () {
             type: 'separator'
         }, {
             label: 'Open Acoustic Devices Website',
-            click: function () {
+            click: () => {
 
                 shell.openExternal('https://openacousticdevices.info');
 
@@ -499,7 +521,7 @@ app.on('ready', function () {
         }]
     }];
 
-    menu = Menu.buildFromTemplate(menuTemplate);
+    const menu = Menu.buildFromTemplate(menuTemplate);
 
     Menu.setApplicationMenu(menu);
 
@@ -507,7 +529,7 @@ app.on('ready', function () {
 
 });
 
-app.on('window-all-closed', function () {
+app.on('window-all-closed', () => {
 
     app.quit();
 

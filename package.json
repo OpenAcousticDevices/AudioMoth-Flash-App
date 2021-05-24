@@ -1,13 +1,13 @@
 {
   "name": "AudioMoth-Flash",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "The flashing app used to apply firmware to the AudioMoth acoustic monitoring device.",
   "main": "main.js",
   "author": "openacousticdevices.info",
   "license": "ISC",
   "repository": {
-    "type" : "git",
-    "url" : "https://github.com/OpenAcousticDevices/AudioMoth-Flash-App.git"
+    "type": "git",
+    "url": "https://github.com/OpenAcousticDevices/AudioMoth-Flash-App.git"
   },
   "scripts": {
     "postinstall": "install-app-deps",
@@ -18,6 +18,9 @@
     "asar": {
       "smartUnpack": true
     },
+    "asarUnpack": [
+      "**/firmware/*"
+    ],
     "appId": "info.openacousticdevices.audiomothflashapp",
     "mac": {
       "hardenedRuntime": true,

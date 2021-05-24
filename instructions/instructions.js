@@ -49,7 +49,7 @@ function flashLEDs () {
 
 }
 
-electron.ipcRenderer.on('status-instructions', function (event, status) {
+electron.ipcRenderer.on('status-instructions', (event, status) => {
 
     switch (status) {
 
@@ -104,7 +104,7 @@ function updateUI () {
 
 function addButtonListener (button, targetIndex) {
 
-    button.addEventListener('click', function () {
+    button.addEventListener('click', () => {
 
         previousIndexes.push(currentIndex);
         currentIndex = targetIndex;
@@ -127,13 +127,13 @@ function setUpButtons () {
 
     addButtonListener(step3Button0, 4);
 
-    step4Button0.addEventListener('click', function () {
+    step4Button0.addEventListener('click', () => {
 
         electron.remote.getCurrentWindow().close();
 
     });
 
-    backLink.addEventListener('click', function () {
+    backLink.addEventListener('click', () => {
 
         if (currentIndex === 0) {
 
