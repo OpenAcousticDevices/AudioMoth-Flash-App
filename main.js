@@ -471,6 +471,15 @@ app.on('ready', () => {
 
             }
         }, {
+            type: 'checkbox',
+            checked: false,
+            label: 'Enable Bootloader Overwrite Option',
+            click: () => {
+
+                mainWindow.webContents.send('toggle-bootloader-overwrite');
+
+            }
+        }, {
             type: 'separator'
         }, {
             label: 'Quit',

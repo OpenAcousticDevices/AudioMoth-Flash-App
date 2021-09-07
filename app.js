@@ -36,6 +36,8 @@ const statusDiv = document.getElementById('status-div');
 const versionSelect = document.getElementById('version-select');
 const downloadButton = document.getElementById('download-button');
 
+const overwriteBootloaderDiv = document.getElementById('overwrite-bootloader-div');
+
 /* Status set getStatus which enables/disables flash buttons */
 var inFlashableState = false;
 
@@ -952,6 +954,12 @@ electron.ipcRenderer.on('update-check', () => {
         }
 
     });
+
+});
+
+electron.ipcRenderer.on('toggle-bootloader-overwrite', () => {
+
+    overwriteBootloaderDiv.style.display = (overwriteBootloaderDiv.style.display === '') ? 'none' : '';
 
 });
 

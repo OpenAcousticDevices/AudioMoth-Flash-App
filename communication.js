@@ -930,8 +930,8 @@ function crcCheck (expectedCRC, isDestructive, successCallback) {
 
                     electronLog.error('Flash CRC was incorrect, ending communication');
 
-                    let errorString = 'Flash failed, CRC did not match.\n';
-                    errorString += 'Expected ' + expectedCRC + ' but received ' + receivedCRC + '.\n';
+                    let errorString = 'Flash failed, CRC did not match. ';
+                    errorString += 'Expected ' + expectedCRC + ' but received ' + receivedCRC + '. ';
                     errorString += 'Reconnect device and try again.';
                     displayError('Incorrect CRC', errorString);
                     electron.ipcRenderer.send('set-bar-aborted');

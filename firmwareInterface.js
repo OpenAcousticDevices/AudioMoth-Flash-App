@@ -8,6 +8,10 @@
 
 /* global XMLHttpRequest */
 
+/* Firmware files open with a 32-bit address 0 which are valid if they fall between these two values */
+const MIN_ADDRESS_0 = 536870912;
+const MAX_ADDRESS_0 = 536903680;
+
 const electron = require('electron');
 const dialog = electron.remote.dialog;
 const app = electron.remote.app;
@@ -125,7 +129,7 @@ function fillDescription (i) {
     const month = (monthNum > 9) ? monthNum : '0' + monthNum;
     const publishDateString = day + '/' + month + '/' + publishDate.getFullYear();
 
-    releaseDescriptionSpan.innerHTML = '</br><p><b>Version:</b> ' + releases[i].name + '</p>';
+    releaseDescriptionSpan.innerHTML = '</br><p><b>Firmware version:</b> AudioMoth-Firmware-Basic ' + releases[i].name + '</p>';
     releaseDescriptionSpan.innerHTML += '<p><b>Date released:</b> ' + publishDateString + '</p>';
     releaseDescriptionSpan.innerHTML += '<b>Changes:</b>';
 
@@ -212,8 +216,14 @@ function isFirmwareFile (directory) {
 
         }
 
+        const array8 = new Uint8Array([contents[0], contents[1], contents[2], contents[3]]);
+        const array32 = new Uint32Array(array8.buffer);
+        const address0 = array32[0];
+
+        console.log('Firmware address 0: ' + address0);
+
         /* The first bytes of all AudioMoth firmware follow this sequence of values */
-        resolve((contents[0] === 0) && (contents[1] === 128) && (contents[2] === 0) && (contents[3] === 32));
+        resolve(address0 >= MIN_ADDRESS_0 && address0 <= MAX_ADDRESS_0);
 
     });
 
