@@ -473,7 +473,7 @@ app.on('ready', () => {
         }, {
             type: 'checkbox',
             checked: false,
-            label: 'Enable Bootloader Overwrite Option',
+            label: 'Enable Overwrite Bootloader Option',
             click: () => {
 
                 mainWindow.webContents.send('toggle-bootloader-overwrite');
