@@ -6,21 +6,25 @@
 
 'use strict';
 
-const electron = require('electron');
-const app = electron.app;
-const ipcMain = electron.ipcMain;
-const BrowserWindow = electron.BrowserWindow;
-const Menu = electron.Menu;
-const shell = electron.shell;
+const {app, Menu, shell, ipcMain, BrowserWindow} = require('electron');
+
+require('@electron/remote/main').initialize();
 
 const path = require('path');
 const fs = require('fs');
 
+/* Firmware types supported by this app */
+const FIRMWARE_BASIC = 0;
+const FIRMWARE_MICROPHONE = 1;
+const FIRMWARE_GPS = 2;
+
 const electronDL = require('electron-dl');
 const ProgressBar = require('electron-progressbar');
 
-var serialFlashMax;
-var restartTimeout;
+let serialFlashMax;
+let restartTimeout;
+
+let currentFirmware = FIRMWARE_BASIC;
 
 /* First and last section of the bar are dedicated to connecting to the device/switching to bootloader and restarting after */
 /* CONNECTION_PERCENTAGE_VALUE must equal MAX_PORT_OPEN_ATTEMPTS in app.js */
@@ -29,16 +33,16 @@ const READY_CHECK_PERCENTAGE_VALUE = 7;
 const RESTART_PERCENTAGE_VALUE = 10;
 const FLASH_PERCENTAGE_VALUE = 100 - CONNECTION_PERCENTAGE_VALUE - READY_CHECK_PERCENTAGE_VALUE - RESTART_PERCENTAGE_VALUE;
 
-var firmwareDirectory = path.join(app.getPath('downloads'), 'AudioMothFirmware');
+const firmwareDirectory = path.join(app.getPath('downloads'), 'AudioMothFirmware');
 
 require('electron-debug')({
     showDevTools: true,
     devToolsMode: 'undocked'
 });
 
-var mainWindow, instructionsWindow, aboutWindow;
+let mainWindow, instructionsWindow, aboutWindow;
 
-var flashProgressBar;
+let flashProgressBar;
 
 /* Progress bar functions */
 
@@ -244,7 +248,9 @@ ipcMain.on('start-bar', () => {
         browserWindow: {
             parent: mainWindow,
             webPreferences: {
-                nodeIntegration: true
+                enableRemoteModule: true,
+                nodeIntegration: true,
+                contextIsolation: false
             }
         },
         /* When a progress bar reaches 100, the value is locked. So to allow the bar to fill when updating the bootloader and then again for the flash, it fills to 100/101 initially. */
@@ -312,7 +318,7 @@ ipcMain.on('download-item', async (event, {url, fileName, directory}) => {
 
     console.log(await electronDL.download(win, url, {
         filename: fileName,
-        directory: directory,
+        directory,
         errorMessage: 'Unable to download firmware file ' + fileName + '!',
         onStarted: onDownloadStarted,
         onCancel: onDownloadCancel
@@ -355,12 +361,22 @@ function openInstructionsWindow () {
         icon: path.join(__dirname, iconLocation),
         parent: mainWindow,
         webPreferences: {
-            nodeIntegration: true
+            enableRemoteModule: true,
+            nodeIntegration: true,
+            contextIsolation: false
         }
     });
 
     instructionsWindow.setMenu(null);
     instructionsWindow.loadURL(path.join('file://', __dirname, '/instructions/instructions.html'));
+
+    require('@electron/remote/main').enable(instructionsWindow.webContents);
+
+    instructionsWindow.webContents.on('dom-ready', () => {
+
+        mainWindow.webContents.send('poll-night-mode');
+
+    });
 
     instructionsWindow.on('closed', () => {
 
@@ -391,12 +407,16 @@ function openAboutWindow () {
         icon: path.join(__dirname, iconLocation),
         parent: mainWindow,
         webPreferences: {
-            nodeIntegration: true
+            enableRemoteModule: true,
+            nodeIntegration: true,
+            contextIsolation: false
         }
     });
 
     aboutWindow.setMenu(null);
     aboutWindow.loadURL(path.join('file://', __dirname, '/about.html'));
+
+    require('@electron/remote/main').enable(aboutWindow.webContents);
 
     aboutWindow.on('closed', () => {
 
@@ -404,7 +424,73 @@ function openAboutWindow () {
 
     });
 
+    aboutWindow.webContents.on('dom-ready', () => {
+
+        mainWindow.webContents.send('poll-night-mode');
+
+    });
+
 }
+
+ipcMain.on('night-mode-poll-reply', (e, nightMode) => {
+
+    if (aboutWindow) {
+
+        aboutWindow.webContents.send('night-mode', nightMode);
+
+    }
+
+    if (instructionsWindow) {
+
+        instructionsWindow.webContents.send('night-mode', nightMode);
+
+    }
+
+});
+
+function toggleNightMode () {
+
+    mainWindow.webContents.send('night-mode');
+
+    if (aboutWindow) {
+
+        aboutWindow.webContents.send('night-mode');
+
+    }
+
+    if (instructionsWindow) {
+
+        instructionsWindow.webContents.send('night-mode');
+
+    }
+
+}
+
+function changeFirmware (firmwareID) {
+
+    currentFirmware = firmwareID;
+
+    const menu = Menu.getApplicationMenu();
+
+    const firmwareOptionCount = menu.getMenuItemById('firmware_menu').submenu.items.length;
+
+    for (let i = 0; i < firmwareOptionCount; i++) {
+
+        const menuItem = menu.getMenuItemById('firmware_' + i);
+
+        menuItem.checked = i === firmwareID;
+
+    }
+
+    mainWindow.webContents.send('changed-firmware', firmwareID);
+
+}
+
+ipcMain.on('poll-current-firmware', (event) => {
+
+    event.returnValue = currentFirmware;
+
+});
 
 app.on('ready', () => {
 
@@ -427,9 +513,14 @@ app.on('ready', () => {
         resizable: false,
         fullscreenable: false,
         webPreferences: {
-            nodeIntegration: true
+            enableRemoteModule: true,
+            nodeIntegration: true,
+            contextIsolation: false,
+            backgroundThrottling: false
         }
     });
+
+    require('@electron/remote/main').enable(mainWindow.webContents);
 
     mainWindow.on('restore', () => {
 
@@ -446,6 +537,13 @@ app.on('ready', () => {
     const menuTemplate = [{
         label: 'File',
         submenu: [{
+            type: 'checkbox',
+            id: 'nightmode',
+            label: 'Night Mode',
+            accelerator: 'CommandOrControl+N',
+            checked: false,
+            click: toggleNightMode
+        }, {
             label: 'Open Downloads Folder',
             id: 'downloadFolder',
             accelerator: 'CommandOrControl+O',
@@ -453,7 +551,7 @@ app.on('ready', () => {
 
                 if (fs.existsSync(firmwareDirectory)) {
 
-                    shell.openItem(firmwareDirectory);
+                    shell.openPath(firmwareDirectory);
 
                 }
 
@@ -487,6 +585,40 @@ app.on('ready', () => {
             click: () => {
 
                 app.quit();
+
+            }
+        }]
+    }, {
+        label: 'Firmware',
+        id: 'firmware_menu',
+        submenu: [{
+            label: 'AudioMoth Firmware Basic',
+            type: 'checkbox',
+            id: 'firmware_0',
+            checked: true,
+            click: () => {
+
+                changeFirmware(FIRMWARE_BASIC);
+
+            }
+        }, {
+            label: 'AudioMoth USB Microphone',
+            type: 'checkbox',
+            id: 'firmware_1',
+            checked: false,
+            click: () => {
+
+                changeFirmware(FIRMWARE_MICROPHONE);
+
+            }
+        }, {
+            label: 'AudioMoth GPS Sync',
+            type: 'checkbox',
+            id: 'firmware_2',
+            checked: false,
+            click: () => {
+
+                changeFirmware(FIRMWARE_GPS);
 
             }
         }]

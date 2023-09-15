@@ -9,7 +9,7 @@
 /* global document */
 
 const electron = require('electron');
-const dialog = electron.remote.dialog;
+const {dialog, getCurrentWindow} = require('@electron/remote');
 
 const fs = require('fs');
 const path = require('path');
@@ -18,6 +18,7 @@ const electronLog = require('electron-log');
 const firmwareInterface = require('./firmwareInterface.js');
 const comms = require('./communication.js');
 const versionChecker = require('./versionChecker.js');
+const nightMode = require('./nightMode.js');
 
 /* File size limits for local binary files */
 const MAX_FILE_SIZE = 256 * 1024 - 0x4000;
@@ -39,29 +40,35 @@ const downloadButton = document.getElementById('download-button');
 const overwriteBootloaderDiv = document.getElementById('overwrite-bootloader-div');
 
 /* Status set getStatus which enables/disables flash buttons */
-var inFlashableState = false;
+let inFlashableState = false;
+
+/* The names of supported firmware */
+const FIRMWARE_NAMES = ['AudioMoth-Firmware-Basic', 'AudioMoth-USB-Microphone', 'AudioMoth-GPS-Sync'];
+
+/* Is overwrite bootloader option available */
+let overwriteBootloaderOptionEnabled = false;
 
 /* Frequency of status check */
 const STATUS_TIMEOUT_LENGTH = 500;
 
 /* Counter for port opening attempts */
-var portOpenReattempts = 0;
+let portOpenReattempts = 0;
 const MAX_PORT_OPEN_ATTEMPTS = 5;
 const PORT_OPEN_ATTEMPT_DELAY = 500;
 
 /* Counter for bootloader version check attempts */
-var bootloaderVersionReattempts = 0;
+let bootloaderVersionReattempts = 0;
 const MAX_BOOTLOADER_VERSION_ATTEMPTS = 5;
 const BOOTLOADER_VERSION_ATTEMPT_DELAY = 500;
 
 /* Function called when bootloader has successfully been updated */
-var bootloaderUpdateCompleteCallback;
+let bootloaderUpdateCompleteCallback;
 
 /* Flag indicating waiting for progress window to stop showing bootloader update success message */
-var displayingBootloaderSuccess = false;
+let displayingBootloaderSuccess = false;
 
 /* Build packed path to bootloader update file] */
-var directory = path.join(__dirname, 'firmware');
+let directory = path.join(__dirname, 'firmware');
 const unpackedDirectory = directory.replace('app.asar', 'app.asar.unpacked');
 
 if (fs.existsSync(directory)) {
@@ -496,6 +503,8 @@ async function openPortCheckBootloader (firmwarePath, destructive, version, expe
 
 async function checkBootloaderThenSerialWrite (firmwarePath, destructive, version, expectedCRC) {
 
+    
+
     comms.requestBootloaderVersion((err, bootloaderVersion) => {
 
         if (err) {
@@ -647,7 +656,7 @@ async function flashButtonOnClick (firmwarePath, destructive, version, expectedC
     /* Verify user really wants to overwrite the bootloader (if on downloaded pane, 'destructive' will always be false) */
     if (destructive) {
 
-        const fileRegex = new RegExp(/(audiomoth)?\d.\d.\d\.bin/);
+        const fileRegex = /(audiomoth-firmware-basic|audiomoth-usb-microphone|audiomoth-gps-sync)-\d+\.\d+\.\d+\.bin/;
 
         const regexResult = fileRegex.exec(path.basename(firmwarePath.toLowerCase()));
 
@@ -657,8 +666,8 @@ async function flashButtonOnClick (firmwarePath, destructive, version, expectedC
                 type: 'error',
                 icon: path.join(__dirname, '/icon-64.png'),
                 title: 'Cannot overwrite bootloader',
-                buttons: ['OK'],
-                message: 'You are trying to overwrite the bootloader with a standard release of AudioMoth firmware. You cannot do this with this application.'
+                buttons: ['Cancel'],
+                message: 'This firmware version is intended to be installed alongside the bootloader. Click below to cancel the operation.'
             });
 
             electron.ipcRenderer.send('set-bar-aborted');
@@ -787,9 +796,13 @@ async function flashButtonOnClick (firmwarePath, destructive, version, expectedC
 
 flashButtonDownloaded.addEventListener('click', async () => {
 
-    const firmwarePath = firmwareInterface.getCurrentFirmwareDirectory();
-    const version = firmwareInterface.getSelectedFirmwareVersion();
-    const expectedCRC = firmwareInterface.getSelectedFirmwareCRC();
+    const currentFirmwareID = requestCurrentFirmwareID();
+
+    electronLog.log('Attempting to apply firmware:', FIRMWARE_NAMES[currentFirmwareID]);
+
+    const firmwarePath = firmwareInterface.getCurrentFirmwareDirectory(currentFirmwareID);
+    const version = firmwareInterface.getSelectedFirmwareVersion(currentFirmwareID);
+    const expectedCRC = firmwareInterface.getSelectedFirmwareCRC(currentFirmwareID);
 
     /* Firmware downloaded from Github releases never includes a bootloader so a destructive write is never needed */
     flashButtonOnClick(firmwarePath, false, version, expectedCRC);
@@ -836,6 +849,8 @@ flashButtonLocal.addEventListener('click', () => {
         return;
 
     }
+
+    electronLog.log('Attempting to apply local firmware binary');
 
     /* As the firmware can be any custom firmware, version number and CRC are not known before flashing */
     flashButtonOnClick(firmwareInterface.getLocalFirmwarePath(), destructiveCheckbox.checked);
@@ -918,7 +933,7 @@ electron.ipcRenderer.on('update-check', () => {
 
             console.error(response.error);
 
-            dialog.showMessageBox(electron.remote.getCurrentWindow(), {
+            dialog.showMessageBox(getCurrentWindow(), {
                 type: 'error',
                 title: 'Failed to check for updates',
                 message: response.error
@@ -930,7 +945,7 @@ electron.ipcRenderer.on('update-check', () => {
 
         if (response.updateNeeded === false) {
 
-            dialog.showMessageBox(electron.remote.getCurrentWindow(), {
+            dialog.showMessageBox(getCurrentWindow(), {
                 type: 'info',
                 title: 'Update not needed',
                 message: 'Your app is on the latest version (' + response.latestVersion + ').'
@@ -959,7 +974,15 @@ electron.ipcRenderer.on('update-check', () => {
 
 electron.ipcRenderer.on('toggle-bootloader-overwrite', () => {
 
-    overwriteBootloaderDiv.style.display = (overwriteBootloaderDiv.style.display === '') ? 'none' : '';
+    overwriteBootloaderOptionEnabled = !overwriteBootloaderOptionEnabled;
+
+    overwriteBootloaderDiv.style.display = overwriteBootloaderOptionEnabled ? '' : 'none';
+
+    if (!overwriteBootloaderOptionEnabled) {
+
+        destructiveCheckbox.checked = false;
+
+    }
 
 });
 
@@ -995,3 +1018,33 @@ destructiveCheckbox.addEventListener('change', () => {
     }
 
 });
+
+electron.ipcRenderer.on('night-mode', (e, nm) => {
+
+    if (nm !== undefined) {
+
+        nightMode.setNightMode(nm);
+
+    } else {
+
+        nightMode.toggle();
+
+    }
+
+});
+
+electron.ipcRenderer.on('poll-night-mode', () => {
+
+    electron.ipcRenderer.send('night-mode-poll-reply', nightMode.isEnabled());
+
+});
+
+/* Request the ID of the current firmware being displayed */
+
+function requestCurrentFirmwareID () {
+
+    const currentFirmwareID = electron.ipcRenderer.sendSync('poll-current-firmware');
+
+    return currentFirmwareID;
+
+}

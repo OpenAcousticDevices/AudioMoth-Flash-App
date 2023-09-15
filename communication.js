@@ -7,12 +7,11 @@
 'use strict';
 
 const electron = require('electron');
-const dialog = electron.remote.dialog;
+const {dialog} = require('@electron/remote');
 
 const audiomoth = require('audiomoth-hid');
 
-const SerialPort = require('serialport');
-const ByteLength = SerialPort.parsers.ByteLength;
+const {SerialPort, ByteLengthParser} = require('serialport');
 const drivelist = require('drivelist');
 const fs = require('fs');
 const path = require('path');
@@ -23,14 +22,14 @@ const PORT_TIMEOUT_LENGTH = 1500;
 
 /* Counter for ready checks */
 const MAX_READY_CHECK_COUNT = 7;
-var readyCheckCount;
+let readyCheckCount;
 const READY_CHECK_DELAY_LENGTH = 100;
 
 /* Timeout to wait for a switch to bootloader mode after the message is sent */
 const BOOTLOADER_CHECK_MAX_TIMEOUT_LENGTH = 10000;
 const BOOTLOADER_CHECK_TIMEOUT_LENGTH = 100;
-var bootloaderCheckTimeout;
-var bootloaderCheckTimedOut = false;
+let bootloaderCheckTimeout;
+let bootloaderCheckTimedOut = false;
 
 /* Timeout to wait for a reset after a serial flash */
 const SERIAL_RESET_TIMEOUT_LENGTH = 7500;
@@ -39,50 +38,50 @@ const SERIAL_RESET_CHECK_TIMEOUT_LENGTH = 100;
 /* Timeout to wait for a reset after an MSD flash */
 const MSD_RESET_TIMEOUT_LENGTH = 5000;
 const MSD_RESET_CHECK_TIMEOUT_LENGTH = 100;
-var msdCheckTimeout;
-var msdFinalTimeout;
-var msdFinalTimedOut = false;
+let msdCheckTimeout;
+let msdFinalTimeout;
+let msdFinalTimedOut = false;
 
 /* MSD flash progress timer. Total animation time = MSD_PROGRESS_TIMEOUT_LENGTH * MSD_MAX_PROGRESS */
 const MSD_PROGRESS_TIMEOUT_LENGTH = 25;
 const MSD_MAX_PROGRESS = 100;
-var msdProgress;
+let msdProgress;
 
 /* Time spent resetting */
-var resetTime;
+let resetTime;
 
 /* Firmware binary file size limit when using MSD flashing */
 const MAX_FILE_SIZE_MSD = 0x00034000;
 
 /* Whether or not the app is in the process of communicating with a device (used to prevent spamming requests) */
-var communicating = false;
+let communicating = false;
 
 /* Serial port through which AudioMoth communication is taking place */
-var port;
+let port;
 /* Buffer object which extends as more bytes are received */
-var queue;
+let queue;
 /* Regex to be applied to the queue buffer when it's full */
-var responseRegex;
+let responseRegex;
 /* Number of bytes expected as a response to a given message */
-var responseExpectedLength;
+let responseExpectedLength;
 /* Function which is run when correct response is received */
-var completionFunction;
+let completionFunction;
 
 /* Callback called by openPort if failure occurs */
-var portErrorCallback;
+let portErrorCallback;
 
 /* ID of timeout waiting for correct response */
-var responseTimeout;
+let responseTimeout;
 /* Whether or not a message request has already timed out */
-var timedOut;
+let timedOut;
 
 /* Timeout for attempting another ready check */
-var readyTimeout;
+let readyTimeout;
 
-var receiveComplete;
+let receiveComplete;
 
 /* ID of timeout waiting for reset response */
-var flashResetTimeout;
+let flashResetTimeout;
 
 /* xmodem values: */
 const SOH = 0x01;
@@ -95,13 +94,13 @@ exports.BLOCK_SIZE = BLOCK_SIZE;
 const MAX_REPEATS = 10;
 
 /* Variables used to keep track of flash process */
-var numberOfRepeats;
-var blockNumber;
-var lower = 0;
-var upper = 0;
+let numberOfRepeats;
+let blockNumber;
+let lower = 0;
+let upper = 0;
 
 /* Array of buffers of length BLOCK_SIZE */
-var splitBuffers;
+let splitBuffers;
 
 /* Device statuses */
 exports.STATUS_USB_DRIVE_BOOTLOADER = 0;
@@ -111,13 +110,17 @@ exports.STATUS_AUDIOMOTH_AUTO = 3;
 exports.STATUS_AUDIOMOTH_MANUAL = 4;
 
 /* Flag indicating the overall process has failed and shouldn't continue */
-var flashFailed = false;
+let flashFailed = false;
 
 function closePort () {
 
-    if (port.isOpen) {
+    if (port !== undefined) {
 
-        port.close();
+        if (port.isOpen) {
+
+            port.close();
+
+        }
 
     }
 
@@ -160,9 +163,9 @@ function displayError (title, message) {
     dialog.showMessageBox({
         type: 'error',
         icon: path.join(__dirname, '/icon-64.png'),
-        title: title,
+        title,
         buttons: ['OK'],
-        message: message
+        message
     });
 
 }
@@ -461,6 +464,12 @@ exports.requestBootloader = requestBootloader;
 
 function receive (data) {
 
+    if (port === undefined) {
+
+        return;
+
+    }
+
     if (receiveComplete || timedOut || !port.isOpen) {
 
         return;
@@ -516,7 +525,7 @@ function receive (data) {
 
 async function send (buffer, expectedLength, regex, callback) {
 
-    if (flashFailed) {
+    if (flashFailed || port === undefined) {
 
         return;
 
@@ -618,9 +627,10 @@ function openPort (name, openCallback, closeCallback, errorCallback) {
     queue = Buffer.alloc(0);
 
     /* Open a connection to the port at the given path */
-    port = new SerialPort(name, {
+    port = new SerialPort({
+        path: name,
         baudRate: 9600
-    }, false);
+    });
 
     port.on('open', () => {
 
@@ -654,7 +664,7 @@ function openPort (name, openCallback, closeCallback, errorCallback) {
     });
 
     /* Every time 1 byte is received, call receive(data) */
-    const parser = port.pipe(new ByteLength({length: 1}));
+    const parser = port.pipe(new ByteLengthParser({length: 1}));
     parser.on('data', receive);
 
 }
@@ -762,11 +772,7 @@ function stopCommunicating () {
 
     communicating = false;
 
-    if (port.isOpen) {
-
-        closePort();
-
-    }
+    closePort();
 
 }
 exports.stopCommunicating = stopCommunicating;

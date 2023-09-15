@@ -3,18 +3,20 @@
 
     <head>
         <link rel="stylesheet" href="node_modules/bootstrap/dist/css/bootstrap.min.css">
+        <link rel="stylesheet" href="index.css">
+        <link id="uiCSS" rel="stylesheet" href="ui.css">
     </head>
 
     <body style="font-size: 10pt; overflow-x:hidden; font-family: Helvetica, Arial, sans-serif;-webkit-user-select: none; -webkit-app-region: drag;">
         <div class="container" style="padding: 11px;">
 
             <div class="row">
-                <ul class="nav nav-tabs nav-justified" style="width: 100%; font-size: 10pt; font-family: Helvetica, Arial, sans-serif;">
+                <ul class="nav nav-tabs nav-justified" style="width: 100%; font-size: 10pt; font-family: Helvetica, Arial, sans-serif;" role="tablist">
                     <li class="nav-item" style="margin-left: 10px; margin-right: 10px;">
-                        <a class="nav-link active" data-toggle="tab" href="#download-tab" id="download-tab-link">Use Standard Release</a>
+                        <a class="nav-link active" data-bs-toggle="tab" data-bs-target="#download-tab" id="download-tab-link" role="tab">Use Standard Release</a>
                     </li>
                     <li class="nav-item" style="margin-right: 10px;">
-                        <a class="nav-link" data-toggle="tab" href="#local-tab" id="local-tab-link">Use Local File</a>
+                        <a class="nav-link" data-bs-toggle="tab" data-bs-target="#local-tab" id="local-tab-link" role="tab">Use Local File</a>
                     </li>
                 </ul>
             </div>

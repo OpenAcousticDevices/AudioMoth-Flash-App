@@ -1,0 +1,23 @@
+body {
+    background: #000000;
+    color: #FFFFFF;
+}
+
+input {
+    background: #000000;
+    color: #FFFFFF;
+}
+
+.nav-tabs .nav-item .nav-link.active {
+    background: #3b3b3b;
+    color: #FFFFFF;
+}
+
+select {
+    background: #000000;
+    color: #FFFFFF;
+}
+
+.grey {
+    color:#808080;
+}

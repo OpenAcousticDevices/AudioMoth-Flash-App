@@ -8,54 +8,26 @@
 
 /* global XMLHttpRequest */
 
-const electron = require('electron');
+const {app} = require('@electron/remote');
+
+const semver = require('semver');
 
 const pjson = require('./package.json');
-
-/* Compare two semantic versions and return true if older */
-
-function isOlderSemanticVersion (aVersion, bVersion) {
-
-    let aVersionNum, bVersionNum;
-
-    for (let i = 0; i < aVersion.length; i++) {
-
-        aVersionNum = aVersion[i];
-        bVersionNum = bVersion[i];
-
-        if (aVersionNum > bVersionNum) {
-
-            return false;
-
-        } else if (aVersionNum < bVersionNum) {
-
-            return true;
-
-        }
-
-    }
-
-    return false;
-
-}
 
 /* Check current app version in package.json against latest version in repository's releases */
 
 exports.checkLatestRelease = (callback) => {
 
-    let response;
-
     /* Check for internet connection */
 
     if (!navigator.onLine) {
 
-        response = {updateNeeded: false, error: 'No internet connection, failed to request app version information.'};
-        callback(response);
+        callback({updateNeeded: false, error: 'No internet connection, failed to request app version information.'});
         return;
 
     }
 
-    const version = electron.remote.app.getVersion();
+    const version = app.getVersion();
 
     /* Transform repository URL into release API URL */
 
@@ -78,10 +50,9 @@ exports.checkLatestRelease = (callback) => {
 
             /* Compare current version in package.json to latest version pulled from Github */
 
-            const updateNeeded = isOlderSemanticVersion(version, latestVersion);
+            const updateNeeded = semver.lt(version, latestVersion);
 
-            response = {updateNeeded: updateNeeded, latestVersion: updateNeeded ? latestVersion : version};
-            callback(response);
+            callback({updateNeeded, latestVersion: updateNeeded ? latestVersion : version});
 
         }
 
@@ -90,9 +61,7 @@ exports.checkLatestRelease = (callback) => {
     xmlHttp.onerror = () => {
 
         console.error('Failed to pull release information.');
-
-        response = {updateNeeded: false, error: 'HTTP connection error, failed to request app version information.'};
-        callback(response);
+        callback({updateNeeded: false, error: 'HTTP connection error, failed to request app version information.'});
 
     };
 

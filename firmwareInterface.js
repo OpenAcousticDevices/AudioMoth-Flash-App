@@ -13,9 +13,7 @@ const MIN_ADDRESS_0 = 536870912;
 const MAX_ADDRESS_0 = 536903680;
 
 const electron = require('electron');
-const dialog = electron.remote.dialog;
-const app = electron.remote.app;
-const menu = electron.remote.Menu;
+const {dialog, app, Menu} = require('@electron/remote');
 
 const fs = require('fs');
 const path = require('path');
@@ -30,10 +28,14 @@ const firmwareDirectory = path.join(app.getPath('downloads'), 'AudioMothFirmware
 exports.firmwareDirectory = firmwareDirectory;
 
 /* JSON file backing up all release information */
-const localReleaseFileDirectory = path.join(app.getPath('userData'), 'releases.json');
+const releaseInformationPaths = [
+    path.join(app.getPath('userData'), 'releases_basic.json'),
+    path.join(app.getPath('userData'), 'releases_microphone.json'),
+    path.join(app.getPath('userData'), 'releases_gps.json')
+];
 
 /* Location of selected local firmware file */
-var localFirmwareDirectory = '';
+let localFirmwareDirectory = '';
 
 /* UI elements */
 const releaseDescriptionSpan = document.getElementById('release-description-span');
@@ -52,12 +54,60 @@ const localTabLink = document.getElementById('local-tab-link');
 
 const fileLabel = document.getElementById('file-label');
 
+/* The names of supported firmwares */
+const FIRMWARE_NAMES = ['AudioMoth-Firmware-Basic', 'AudioMoth-USB-Microphone', 'AudioMoth-GPS-Sync'];
+
+/* URLs of the release pages for each supported firmware */
+const FIRMWARE_URLS = [
+    'https://api.github.com/repos/OpenAcousticDevices/AudioMoth-Firmware-Basic/releases',
+    'https://api.github.com/repos/OpenAcousticDevices/AudioMoth-USB-Microphone/releases',
+    'https://api.github.com/repos/OpenAcousticDevices/AudioMoth-GPS-Sync/releases'];
+
 /* Array of release information objects */
-var releases = [];
+const releaseArrays = Array(FIRMWARE_NAMES.length).fill([]);
+
+/* Request the ID of the current firmware being displayed */
+
+function requestCurrentFirmwareID () {
+
+    const currentFirmwareID = electron.ipcRenderer.sendSync('poll-current-firmware');
+
+    return currentFirmwareID;
+
+}
+
+/* React to the firmware changing in the menu */
+
+electron.ipcRenderer.on('changed-firmware', (e, fw) => {
+
+    console.log('Firmware changed to: ', FIRMWARE_NAMES[fw]);
+
+    getReleases(prepareUI);
+
+});
+
+/* Get release information for a given firmware */
+
+function getReleaseInformation () {
+
+    const firmwareID = requestCurrentFirmwareID();
+
+    return releaseArrays[firmwareID];
+
+}
+
+function getFirmwareName () {
+
+    const firmwareID = requestCurrentFirmwareID();
+    return FIRMWARE_NAMES[firmwareID];
+
+}
 
 /* Retrieve a specific release information object */
 
 function getRelease (index) {
+
+    const releases = getReleaseInformation();
 
     if (index < releases.length && index >= 0) {
 
@@ -113,7 +163,7 @@ exports.getSelectedFirmwareCRC = getSelectedFirmwareCRC;
 
 function getCurrentFirmwareDirectory () {
 
-    return path.join(firmwareDirectory, getSelectedFirmwareVersion() + '.bin');
+    return path.join(firmwareDirectory, getFirmwareName() + '-' + getSelectedFirmwareVersion() + '.bin');
 
 }
 
@@ -123,24 +173,33 @@ exports.getCurrentFirmwareDirectory = getCurrentFirmwareDirectory;
 
 function fillDescription (i) {
 
+    const releases = getReleaseInformation();
+
     const publishDate = new Date(releases[i].published_at);
     const day = (publishDate.getDate() > 9) ? publishDate.getDate() : '0' + publishDate.getDate();
     const monthNum = publishDate.getMonth() + 1;
     const month = (monthNum > 9) ? monthNum : '0' + monthNum;
     const publishDateString = day + '/' + month + '/' + publishDate.getFullYear();
 
-    releaseDescriptionSpan.innerHTML = '</br><p><b>Firmware version:</b> AudioMoth-Firmware-Basic ' + releases[i].name + '</p>';
-    releaseDescriptionSpan.innerHTML += '<p><b>Date released:</b> ' + publishDateString + '</p>';
-    releaseDescriptionSpan.innerHTML += '<b>Changes:</b>';
+    let desc = '</br><p><b>Firmware:</b> ' + getFirmwareName() + '</br>';
+    desc += '<b>Version:</b> ' + releases[i].name + '</br>';
+    desc += '<b>Date released:</b> ' + publishDateString + '</p>';
+    desc += '<b>Changes:</b>';
 
     const converter = new showdown.Converter();
-    releaseDescriptionSpan.innerHTML += converter.makeHtml(releases[i].body);
+    desc += converter.makeHtml(releases[i].body);
+
+    releaseDescriptionSpan.innerHTML = desc;
 
 }
 
 /* Fill release selection with known versions */
 
 function fillVersionList () {
+
+    const releases = getReleaseInformation();
+
+    versionSelect.innerHTML = '';
 
     for (let i = 0; i < releases.length; i++) {
 
@@ -156,13 +215,19 @@ function fillVersionList () {
 
 function isDownloaded (index) {
 
-    if (releases.length === 0) {
+    const firmwareID = requestCurrentFirmwareID();
+
+    if (releaseArrays[firmwareID].length === 0) {
 
         return false;
 
     }
 
-    return fs.existsSync(path.join(firmwareDirectory, releases[index].name + '.bin'));
+    const releases = getReleaseInformation();
+
+    const fileName = getFirmwareName() + '-' + releases[index].name + '.bin';
+
+    return fs.existsSync(path.join(firmwareDirectory, fileName));
 
 }
 
@@ -304,8 +369,11 @@ function downloadFirmware (index) {
 
     updateFolderButton();
 
+    const releases = getReleaseInformation();
+    const firmwareName = getFirmwareName();
+
     const release = releases[index];
-    const fileName = release.name + '.bin';
+    const fileName = firmwareName + '-' + release.name + '.bin';
     const url = release.browser_download_url;
 
     downloadButton.innerHTML = 'Downloading';
@@ -314,8 +382,8 @@ function downloadFirmware (index) {
 
     /* Send message to main process, instructing it to download the file at the given Github URL */
     electron.ipcRenderer.send('download-item', {
-        url: url,
-        fileName: fileName,
+        url,
+        fileName,
         directory: firmwareDirectory
     });
 
@@ -371,7 +439,7 @@ function updateDownloadButtonForSelectedFirmware () {
 
 function updateFolderButton () {
 
-    menu.getApplicationMenu().getMenuItemById('downloadFolder').enabled = fs.existsSync(firmwareDirectory);
+    Menu.getApplicationMenu().getMenuItemById('downloadFolder').enabled = fs.existsSync(firmwareDirectory);
 
 }
 
@@ -419,7 +487,9 @@ function loadLocalReleaseFile (err, data) {
 
     } else {
 
-        releases = JSON.parse(data);
+        const firmwareID = requestCurrentFirmwareID();
+
+        releaseArrays[firmwareID] = JSON.parse(data);
         prepareUI();
 
     }
@@ -440,7 +510,9 @@ function remoteReleaseFailure (err) {
         message: 'Failed to download latest release list. Attempting to use local list instead.'
     }, () => {
 
-        fs.readFile(localReleaseFileDirectory, loadLocalReleaseFile);
+        const firmwareID = requestCurrentFirmwareID();
+
+        fs.readFile(releaseInformationPaths[firmwareID], loadLocalReleaseFile);
 
     });
 
@@ -477,9 +549,10 @@ function sortSemanticVersion (a, b) {
 
 /* Attempt to pull release information from Github */
 
-exports.getReleases = (callback) => {
+function getReleases (callback) {
 
-    const url = 'https://api.github.com/repos/OpenAcousticDevices/AudioMoth-Firmware-Basic/releases';
+    const firmwareID = requestCurrentFirmwareID();
+    const url = FIRMWARE_URLS[firmwareID];
 
     if (!navigator.onLine) {
 
@@ -495,9 +568,11 @@ exports.getReleases = (callback) => {
 
         if (xmlHttp.status === 200) {
 
+            const releases = getReleaseInformation();
+
             const responseJson = JSON.parse(xmlHttp.responseText);
 
-            releases = [];
+            releases.length = 0;
 
             for (let i = 0; i < responseJson.length; i++) {
 
@@ -514,7 +589,7 @@ exports.getReleases = (callback) => {
             releases.sort(sortSemanticVersion);
 
             /* Update local backup */
-            fs.writeFileSync(localReleaseFileDirectory, JSON.stringify(releases));
+            fs.writeFileSync(releaseInformationPaths[firmwareID], JSON.stringify(releases));
 
             callback();
 
@@ -526,7 +601,9 @@ exports.getReleases = (callback) => {
 
     xmlHttp.send(null);
 
-};
+}
+
+exports.getReleases = getReleases;
 
 /* Switch to downloaded firmware tab */
 
