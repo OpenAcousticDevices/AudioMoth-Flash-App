@@ -209,6 +209,17 @@ ipcMain.on('set-bar-info', (event, infoText, max) => {
 
 });
 
+ipcMain.on('set-bar-user-page-ready-check', (event, val) => {
+
+    if (flashProgressBar) {
+
+        flashProgressBar.detail = 'Checking device is ready to have user page cleared.';
+        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + val;
+
+    }
+
+});
+
 ipcMain.on('set-bar-serial-ready-check', (event, val) => {
 
     if (flashProgressBar) {
@@ -326,23 +337,14 @@ ipcMain.on('download-item', async (event, {url, fileName, directory}) => {
 
 });
 
-function shrinkWindowHeight (windowHeight) {
+function openInstructionsWindow () {
 
-    if (process.platform === 'darwin') {
+    if (instructionsWindow) {
 
-        windowHeight -= 20;
-
-    } else if (process.platform === 'linux') {
-
-        windowHeight -= 20;
+        instructionsWindow.show();
+        return;
 
     }
-
-    return windowHeight;
-
-}
-
-function openInstructionsWindow () {
 
     let iconLocation = '/build/icon.ico';
 
@@ -352,12 +354,28 @@ function openInstructionsWindow () {
 
     }
 
+    let windowWidth = 550;
+    let windowHeight = 590;
+
+    if (process.platform === 'linux') {
+
+        windowWidth = 545;
+        windowHeight = 560;
+
+    } else if (process.platform === 'darwin') {
+
+        windowWidth = 545;
+        windowHeight = 563;
+
+    }
+
     instructionsWindow = new BrowserWindow({
         title: 'Manually Switch To Flash Mode',
-        width: 550,
-        height: shrinkWindowHeight(630),
+        width: windowWidth,
+        height: windowHeight,
         fullscreenable: false,
         resizable: false,
+        useContentSize: true,
         icon: path.join(__dirname, iconLocation),
         parent: mainWindow,
         webPreferences: {
@@ -378,9 +396,11 @@ function openInstructionsWindow () {
 
     });
 
-    instructionsWindow.on('closed', () => {
+    instructionsWindow.on('close', (e) => {
 
-        instructionsWindow = null;
+        e.preventDefault();
+
+        instructionsWindow.hide();
 
     });
 
@@ -390,20 +410,40 @@ ipcMain.on('open-instructions', openInstructionsWindow);
 
 function openAboutWindow () {
 
+    if (aboutWindow) {
+
+        aboutWindow.show();
+        return;
+
+    }
+
     let iconLocation = '/build/icon.ico';
+
+    let windowWidth = 400;
+    let windowHeight = 310;
 
     if (process.platform === 'linux') {
 
+        windowWidth = 395;
+        windowHeight = 310;
+
         iconLocation = '/build/icon.png';
+
+    } else if (process.platform === 'darwin') {
+
+        windowWidth = 395;
+        windowHeight = 303;
 
     }
 
     aboutWindow = new BrowserWindow({
-        width: 400,
-        height: shrinkWindowHeight(340),
+        width: windowWidth,
+        height: windowHeight,
         title: 'About AudioMoth Flash App',
         resizable: false,
         fullscreenable: false,
+        autoHideMenuBar: true,
+        useContentSize: true,
         icon: path.join(__dirname, iconLocation),
         parent: mainWindow,
         webPreferences: {
@@ -418,9 +458,11 @@ function openAboutWindow () {
 
     require('@electron/remote/main').enable(aboutWindow.webContents);
 
-    aboutWindow.on('closed', () => {
+    aboutWindow.on('close', (e) => {
 
-        aboutWindow = null;
+        e.preventDefault();
+
+        aboutWindow.hide();
 
     });
 
@@ -502,16 +544,29 @@ app.on('ready', () => {
 
     }
 
-    const windowHeight = shrinkWindowHeight(450);
+    let windowWidth = 565;
+    let windowHeight = 450;
+
+    if (process.platform === 'linux') {
+
+        windowWidth = 560;
+        windowHeight = 426;
+
+    } else if (process.platform === 'darwin') {
+
+        windowWidth = 560;
+        windowHeight = 428;
+
+    }
 
     mainWindow = new BrowserWindow({
-        width: 565,
+        width: windowWidth,
         height: windowHeight,
-        useContentSize: true,
         title: 'AudioMoth Flash App',
         icon: path.join(__dirname, iconLocation),
         resizable: false,
         fullscreenable: false,
+        useContentSize: true,
         webPreferences: {
             enableRemoteModule: true,
             nodeIntegration: true,
@@ -559,15 +614,9 @@ app.on('ready', () => {
         }, {
             label: 'Show Manual Switch Instructions',
             accelerator: 'CommandOrControl+I',
-            click: () => {
-
-                if (!instructionsWindow) {
-
-                    openInstructionsWindow();
-
-                }
-
-            }
+            click: openInstructionsWindow
+        }, {
+            type: 'separator'
         }, {
             type: 'checkbox',
             checked: false,
@@ -575,6 +624,15 @@ app.on('ready', () => {
             click: () => {
 
                 mainWindow.webContents.send('toggle-bootloader-overwrite');
+
+            }
+        }, {
+            type: 'checkbox',
+            checked: true,
+            label: 'Clear User Data When Flashing',
+            click: () => {
+
+                mainWindow.webContents.send('toggle-clear-user-page');
 
             }
         }, {
@@ -626,15 +684,7 @@ app.on('ready', () => {
         label: 'Help',
         submenu: [{
             label: 'About',
-            click: () => {
-
-                if (!aboutWindow) {
-
-                    openAboutWindow();
-
-                }
-
-            }
+            click: openAboutWindow
         }, {
             label: 'Save Log File',
             accelerator: 'CommandOrControl+L',

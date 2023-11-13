@@ -48,6 +48,13 @@ const FIRMWARE_NAMES = ['AudioMoth-Firmware-Basic', 'AudioMoth-USB-Microphone', 
 /* Is overwrite bootloader option available */
 let overwriteBootloaderOptionEnabled = false;
 
+/* Should the user page be cleared of configuration when flashing */
+let clearUserPageEnabled = true;
+
+/* Counter for user page clear attempts */
+let clearUserPageAttempts = 0;
+const MAX_CLEAR_USER_PAGE_ATTEMPTS = 5;
+
 /* Frequency of status check */
 const STATUS_TIMEOUT_LENGTH = 500;
 
@@ -276,6 +283,29 @@ function getInfoText (version) {
 
 }
 
+function clearUserPage (successCallback) {
+
+    if (clearUserPageAttempts < MAX_CLEAR_USER_PAGE_ATTEMPTS) {
+
+        clearUserPageAttempts++;
+        electronLog.log('Attempting to clear user page. Attempt ' + clearUserPageAttempts);
+
+        comms.sendUserPageClear(() => {
+
+            clearUserPage(successCallback);
+
+        }, successCallback);
+
+    } else {
+
+        electronLog.error('Failed to clear user page after ' + MAX_CLEAR_USER_PAGE_ATTEMPTS + ' attempts.');
+        comms.displayError('Failed to clear user page after ' + MAX_CLEAR_USER_PAGE_ATTEMPTS + ' attempts.', 'Switch to USB/OFF, detach and reattach your device, and try again.');
+        comms.stopCommunicating();
+
+    }
+
+}
+
 /* Open file and write contents to serial port */
 
 function serialWrite (firmwarePath, destructive, infoText, expectedCRC, successCallback) {
@@ -300,7 +330,20 @@ function serialWrite (firmwarePath, destructive, infoText, expectedCRC, successC
 
         } else {
 
-            comms.sendFirmware(contents, destructive, expectedCRC, successCallback, infoText, maxBlocks);
+            if (clearUserPageEnabled) {
+
+                clearUserPage(() => {
+
+                    electronLog.log('Successfully cleared user page');
+                    comms.sendFirmware(contents, destructive, expectedCRC, successCallback, infoText, maxBlocks);
+
+                });
+
+            } else {
+
+                comms.sendFirmware(contents, destructive, expectedCRC, successCallback, infoText, maxBlocks);
+
+            }
 
         }
 
@@ -871,7 +914,7 @@ async function selectBinary () {
         }]
     });
 
-    if (filenames) {
+    if (filenames && !filenames.canceled) {
 
         /* Check if binary is a valid firmware file */
         const isValid = await firmwareInterface.isFirmwareFile(filenames.filePaths[0]);
@@ -983,6 +1026,12 @@ electron.ipcRenderer.on('toggle-bootloader-overwrite', () => {
         destructiveCheckbox.checked = false;
 
     }
+
+});
+
+electron.ipcRenderer.on('toggle-clear-user-page', () => {
+
+    clearUserPageEnabled = !clearUserPageEnabled;
 
 });
 

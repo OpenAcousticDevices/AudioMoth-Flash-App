@@ -75,6 +75,11 @@ let responseTimeout;
 /* Whether or not a message request has already timed out */
 let timedOut;
 
+/* Number of times checking the user page checksum has been attempted */
+let userPageCheckCount;
+const MAX_USER_PAGE_CHECK_COUNT = 5;
+const USER_PAGE_CHECK_DELAY_LENGTH = 100;
+
 /* Timeout for attempting another ready check */
 let readyTimeout;
 
@@ -101,6 +106,10 @@ let upper = 0;
 
 /* Array of buffers of length BLOCK_SIZE */
 let splitBuffers;
+
+/* Blank buffer for clearing the user page */
+
+const blankBuffer = Buffer.alloc(128);
 
 /* Device statuses */
 exports.STATUS_USB_DRIVE_BOOTLOADER = 0;
@@ -1113,9 +1122,13 @@ function sendFirmwareData (expectedCRC, isDestructive, successCallback) {
 
 }
 
-function readyCheck (sendBuffer, expectedCRC, isDestructive, successCallback, infoText, maxBlocks) {
+function readyCheck (sendBuffer, updateProgressWindow, successCallback) {
 
-    electron.ipcRenderer.send('set-bar-serial-ready-check', readyCheckCount);
+    if (updateProgressWindow) {
+
+        electron.ipcRenderer.send('set-bar-serial-ready-check', readyCheckCount);
+
+    }
 
     if (readyCheckCount >= MAX_READY_CHECK_COUNT) {
 
@@ -1144,7 +1157,7 @@ function readyCheck (sendBuffer, expectedCRC, isDestructive, successCallback, in
 
             readyTimeout = setTimeout(function () {
 
-                readyCheck(sendBuffer, expectedCRC, isDestructive, successCallback, infoText, maxBlocks);
+                readyCheck(sendBuffer, updateProgressWindow, successCallback);
 
             }, READY_CHECK_DELAY_LENGTH * Math.pow(2, readyCheckCount));
 
@@ -1155,12 +1168,7 @@ function readyCheck (sendBuffer, expectedCRC, isDestructive, successCallback, in
             numberOfRepeats = 0;
             blockNumber = 0;
 
-            /* Send information to main process to start progress bar */
-            electron.ipcRenderer.send('set-bar-flashing');
-            electron.ipcRenderer.send('set-bar-info', infoText, maxBlocks);
-
-            electronLog.log('AudioMoth is ready, sending firmware chunks');
-            sendFirmwareData(expectedCRC, isDestructive, successCallback);
+            successCallback();
 
         }
 
@@ -1203,8 +1211,169 @@ function sendFirmware (buffer, isDestructive, expectedCRC, successCallback, info
 
     readyCheckCount = 0;
 
-    readyCheck(sendBuffer, expectedCRC, isDestructive, successCallback, infoText, maxBlocks);
+    readyCheck(sendBuffer, true, () => {
+
+        /* Send information to main process to start progress bar */
+        electron.ipcRenderer.send('set-bar-flashing');
+        electron.ipcRenderer.send('set-bar-info', infoText, maxBlocks);
+
+        electronLog.log('AudioMoth is ready, sending firmware chunks');
+
+        sendFirmwareData(expectedCRC, isDestructive, successCallback);
+
+    });
 
 }
 
 exports.sendFirmware = sendFirmware;
+
+function generateClearPageBuffer (n) {
+
+    const bn = n + 1;
+
+    /** Buffer format:
+     * Start of Header byte
+     * Block number
+     * Inverse block number (for error checking)
+     * Data
+     * CRC
+     */
+    const sendBuffer = Buffer.concat([Buffer.from([SOH]),
+        Buffer.from([bn]),
+        Buffer.from([(0xFF - bn)]),
+        blankBuffer,
+        Buffer.from('0000', 'hex')
+    ]);
+
+    return sendBuffer;
+
+}
+
+function sendUserPageClear (n, failureCallback, successCallback) {
+
+    const sendBuffer = generateClearPageBuffer(n);
+    const responseLength = 1;
+    const regex = new RegExp(String.fromCharCode(ACK));
+
+    send(sendBuffer, responseLength, regex, (err, response) => {
+
+        if (err) {
+
+            console.error('Failed to clear user page');
+            failureCallback();
+
+        } else {
+
+            n++;
+
+            if (n >= 16) {
+
+                const sendBuffer = Buffer.from([EOF]);
+                const responseLength = 1;
+                const regex = new RegExp(String.fromCharCode(ACK));
+
+                send(sendBuffer, responseLength, regex, (err, response) => {
+
+                    if (err) {
+
+                        electronLog.error('Did not receive ACK from AudioMoth after sending user page end of file');
+                        displayError('Failed to flash device.', 'User page EOF acknowledgement was not received from AudioMoth. Switch to USB/OFF, detach and reattach your device, and try again.');
+                        stopCommunicating();
+
+                    } else {
+
+                        electronLog.log('Successfully cleared user page and received EOF message');
+
+                        clearTimeout(responseTimeout);
+
+                        successCallback();
+
+                    }
+
+                });
+
+            } else {
+
+                sendUserPageClear(n, failureCallback, successCallback);
+
+            }
+
+        }
+
+    });
+
+}
+
+/* Use a checksum to verify clearing user page was successful */
+
+function checkUserPageClear (successCallback) {
+
+    if (userPageCheckCount > MAX_USER_PAGE_CHECK_COUNT) {
+
+        electronLog.error('Didn\'t receive expected checksum response after ' + MAX_USER_PAGE_CHECK_COUNT + ' attempts');
+        displayError('Failed to flash device.', 'User page checksum was not received from AudioMoth. Switch to USB/OFF, detach and reattach your device, and try again.');
+
+        stopCommunicating();
+
+        return;
+
+    }
+
+    userPageCheckCount++;
+
+    const sendBuffer = Buffer.from('n');
+
+    const responseLength = 18;
+    const regex = /CRC: 00000000/;
+
+    /* Send initial write message, signalling start of XMODEM process */
+    send(sendBuffer, responseLength, regex, (err, response) => {
+
+        if (err) {
+
+            electronLog.log('Didn\'t receive expected response, trying ready message again');
+
+            readyTimeout = setTimeout(() => {
+
+                checkUserPageClear(successCallback);
+
+            }, USER_PAGE_CHECK_DELAY_LENGTH * Math.pow(2, userPageCheckCount));
+
+        } else {
+
+            successCallback();
+
+        }
+
+    });
+
+}
+
+/* Send command to clear user page containing configuration and wait for ready response */
+
+function startUserPageClear (failureCallback, successCallback) {
+
+    const sendBuffer = Buffer.from('t');
+
+    readyCheckCount = 0;
+
+    readyCheck(sendBuffer, false, () => {
+
+        /* Send information to main process to update progress bar */
+        electron.ipcRenderer.send('set-bar-info', 'Clearing user page');
+
+        electronLog.log('AudioMoth is ready, sending new user page data');
+
+        sendUserPageClear(0, failureCallback, () => {
+
+            userPageCheckCount = 0;
+
+            checkUserPageClear(successCallback);
+
+        });
+
+    });
+
+}
+
+exports.sendUserPageClear = startUserPageClear;

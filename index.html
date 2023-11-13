@@ -7,10 +7,11 @@
         <link id="uiCSS" rel="stylesheet" href="ui.css">
     </head>
 
-    <body style="font-size: 10pt; overflow-x:hidden; font-family: Helvetica, Arial, sans-serif;-webkit-user-select: none; -webkit-app-region: drag;">
-        <div class="container" style="padding: 11px;">
+    <body style="font-size: 10pt; overflow:hidden; font-family: Helvetica, Arial, sans-serif;-webkit-user-select: none; -webkit-app-region: drag;">
+        <div class="container">
 
-            <div class="row">
+            <div class="row" style="padding-top: 8px;">
+
                 <ul class="nav nav-tabs nav-justified" style="width: 100%; font-size: 10pt; font-family: Helvetica, Arial, sans-serif;" role="tablist">
                     <li class="nav-item" style="margin-left: 10px; margin-right: 10px;">
                         <a class="nav-link active" data-bs-toggle="tab" data-bs-target="#download-tab" id="download-tab-link" role="tab">Use Standard Release</a>
@@ -19,6 +20,7 @@
                         <a class="nav-link" data-bs-toggle="tab" data-bs-target="#local-tab" id="local-tab-link" role="tab">Use Local File</a>
                     </li>
                 </ul>
+
             </div>
 
             <div class="tab-content" style="margin-top: 8px;">
@@ -26,7 +28,7 @@
                 <div role="tabpanel" class="tab-pane fade in active show" id="download-tab" role="tabpanel">
 
                     <div class="row" style="margin-top: 8px;">
-                        <div class="col-9">
+                        <div class="col-9" style="padding-left: 8px;">
                             <div class="row" style="margin-left: 0px; margin-bottom: 8px; width: 409px; border: #cdcdcd thin solid;">
                                 <span style="overflow-x: hidden; overflow-y: scroll; overflow-wrap: break-word; height: 210px; width: 100%; margin-left: 8px;" id="release-description-span">
                             </div>
@@ -34,57 +36,58 @@
                                 <button id="download-button" class="btn btn-primary" style="width: 100%;" disabled>Download</button>
                             </div>
                         </div>
-                        <div class="col-3" style="padding-left: 11px; padding-right: 11px;">
-                            <select id="version-select" size="16" style="width: 114px; text-align: center;"></select>
+                        <div class="col-3" style="padding-left: 11px; padding-right: 8px; text-align: right;">
+                            <select id="version-select" size="16" style="width: 114px; height: 258px; text-align: center;"></select>
                         </div>
                     </div>
 
                 </div>
+            
+            </div>
 
-                <div role="tabpanel" class="tab-pane fade in" id="local-tab" role="tabpanel">
+            <div role="tabpanel" class="tab-pane fade in" id="local-tab" role="tabpanel">
 
-                    <div style="border: #cdcdcd thin solid; width: 100%; margin-top: 8px;">
-                        <div class="row" style="margin-top: 8px; margin-bottom: 8px;">
-                            <div class="col-3">
-                                <button id="file-button" class="btn btn-primary" style="width: 100%; margin-left: 11px">Select File</button>
-                            </div>
-                            <div class="col-8">
-                                <div style="margin-top: 8px;">
-                                    <span id="file-label">No file selected.</span>
-                                </div>
+                <div style="border: #cdcdcd thin solid; width: 100%; margin-top: 8px;">
+                    <div class="row" style="margin-top: 8px; margin-bottom: 8px;">
+                        <div class="col-3">
+                            <button id="file-button" class="btn btn-primary" style="width: 100%; margin-left: 11px">Select File</button>
+                        </div>
+                        <div class="col-8">
+                            <div style="margin-top: 8px;">
+                                <span id="file-label">No file selected.</span>
                             </div>
                         </div>
                     </div>
-
-                    <div style="border: #cdcdcd thin solid; margin-top: 8px; width: 100%; display: none;" id="overwrite-bootloader-div">
-                        <div class="row" style="margin-top: 8px; margin-bottom: 8px;">
-                            <div class="col-6" style="text-align: left;">
-                                <span style="margin-left: 9%;">Overwrite bootloader:</span>
-                            </div>
-                            <div class="col-6" style="text-align: right;">
-                                <input id="destructive-checkbox" type="checkbox" style="margin-right: 20px;">
-                            </div>
-                        </div>
-                    </div>
-
                 </div>
 
-                <div class="fixed-bottom" style="padding: 11px;">
-
-                    <div style="width: 100%; margin-bottom: 8px; border: #cdcdcd thin solid; height: 52px;">
-                        <div class="col-lg-5" id="status-div" style="margin-bottom: 8px; margin-top: 8px; text-align: center;">No AudioMoth found.<br>Make sure the USB cable is connected and the switch is in USB/OFF.</div>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-12">
-                            <div style="text-align: center; width: 100%;">
-                                <button id="flash-button0" class="btn btn-success" disabled style="width: 100%;">Flash AudioMoth</button>
-                                <button id="flash-button1" class="btn btn-success" disabled style="width: 100%; display: none;">Flash AudioMoth</button>
-                            </div>
+                <div style="border: #cdcdcd thin solid; margin-top: 8px; width: 100%; display: none;" id="overwrite-bootloader-div">
+                    <div class="row" style="margin-top: 8px; margin-bottom: 8px;">
+                        <div class="col-6" style="text-align: left;">
+                            <span style="margin-left: 9%;">Overwrite bootloader:</span>
+                        </div>
+                        <div class="col-6" style="text-align: right;">
+                            <input id="destructive-checkbox" type="checkbox" style="margin-right: 20px;">
                         </div>
                     </div>
-
                 </div>
+
+            </div>
+
+            <div class="fixed-bottom" style="padding: 8px; padding-bottom: 8px;">
+
+                <div style="width: 100%; margin-bottom: 8px; border: #cdcdcd thin solid; height: 52px;">
+                    <div class="col-lg-5" id="status-div" style="margin-bottom: 8px; margin-top: 8px; text-align: center;">No AudioMoth found.<br>Make sure the USB cable is connected and the switch is in USB/OFF.</div>
+                </div>
+
+                <div class="row">
+                    <div class="col-12">
+                        <div style="text-align: center; width: 100%;">
+                            <button id="flash-button0" class="btn btn-success" disabled style="width: 100%;">Flash AudioMoth</button>
+                            <button id="flash-button1" class="btn btn-success" disabled style="width: 100%; display: none;">Flash AudioMoth</button>
+                        </div>
+                    </div>
+                </div>
+
             </div>
 
         </div>
