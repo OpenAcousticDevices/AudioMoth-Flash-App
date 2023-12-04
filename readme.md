@@ -23,7 +23,7 @@ This will place a packaged version of the app and an installer for the platform 
 
 Mac applications now require notarising before distribution. For more information on notarising your app, visit the Apple support site [here](https://developer.apple.com/documentation/xcode/notarizing_macos_software_before_distribution).
 
-For detailed usage instructions of the app itself and to download prebuilt installers of the latest stable version for all platforms, visit the app support site [here](http://www.openacousticdevices.info/config).
+For detailed usage instructions of the app itself and to download prebuilt installers of the latest stable version for all platforms, visit the app support site [here](https://www.openacousticdevices.info/support/flashing-support).
 
 ### Running the app on Linux ###
 
