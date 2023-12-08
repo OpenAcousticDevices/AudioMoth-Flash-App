@@ -469,21 +469,19 @@ function loadLocalReleaseFile (err, data) {
             title: 'No local release information',
             buttons: ['OK'],
             message: 'Failed to load local release information. Connect to the internet and reopen application to download additional firmware.'
-        }, () => {
-
-            flashButtonDownloaded.disabled = true;
-            downloadButton.disabled = true;
-
-            downloadTab.classList.remove('active', 'show');
-            downloadTabLink.classList.remove('active');
-            downloadTabLink.disabled = true;
-            downloadTabLink.style.color = 'grey';
-
-            localTab.classList.add('active', 'show');
-            localTabLink.classList.add('active');
-            localTabLink.disabled = true;
-
         });
+
+        flashButtonDownloaded.disabled = true;
+        downloadButton.disabled = true;
+
+        downloadTab.classList.remove('active', 'show');
+        downloadTabLink.classList.remove('active');
+        downloadTabLink.disabled = true;
+        downloadTabLink.style.color = 'grey';
+
+        localTab.classList.add('active', 'show');
+        localTabLink.classList.add('active');
+        localTabLink.disabled = true;
 
     } else {
 
@@ -508,13 +506,11 @@ function remoteReleaseFailure (err) {
         title: 'Connection error',
         buttons: ['OK'],
         message: 'Failed to download latest release list. Attempting to use local list instead.'
-    }, () => {
-
-        const firmwareID = requestCurrentFirmwareID();
-
-        fs.readFile(releaseInformationPaths[firmwareID], loadLocalReleaseFile);
-
     });
+
+    const firmwareID = requestCurrentFirmwareID();
+
+    fs.readFile(releaseInformationPaths[firmwareID], loadLocalReleaseFile);
 
 }
 
@@ -524,6 +520,7 @@ function sortSemanticVersion (a, b) {
 
     const aVersion = a.name.split('.');
     const bVersion = b.name.split('.');
+
     let aVersionNum, bVersionNum;
 
     for (let i = 0; i < aVersion.length; i++) {

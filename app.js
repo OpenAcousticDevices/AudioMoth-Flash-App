@@ -195,7 +195,7 @@ async function getStatus (callback) {
 
                         } else {
 
-                            statusText = 'Found an AudioMoth with ' + descriptionString + ' (' + versionString + ') installed. ';
+                            statusText = 'Found an AudioMoth with ' + descriptionString + ' (' + versionString + ') installed.<br>';
                             statusText += 'This supports automatic switching to flash mode.';
 
                         }
@@ -288,18 +288,27 @@ function clearUserPage (successCallback) {
     if (clearUserPageAttempts < MAX_CLEAR_USER_PAGE_ATTEMPTS) {
 
         clearUserPageAttempts++;
+
         electronLog.log('Attempting to clear user page. Attempt ' + clearUserPageAttempts);
 
         comms.sendUserPageClear(() => {
 
             clearUserPage(successCallback);
 
-        }, successCallback);
+        }, () => {
+
+            clearUserPageAttempts = 0;
+
+            successCallback();
+
+        });
 
     } else {
 
         electronLog.error('Failed to clear user page after ' + MAX_CLEAR_USER_PAGE_ATTEMPTS + ' attempts.');
+
         comms.displayError('Failed to clear user page after ' + MAX_CLEAR_USER_PAGE_ATTEMPTS + ' attempts.', 'Switch to USB/OFF, detach and reattach your device, and try again.');
+
         comms.stopCommunicating();
 
     }
@@ -545,8 +554,6 @@ async function openPortCheckBootloader (firmwarePath, destructive, version, expe
 }
 
 async function checkBootloaderThenSerialWrite (firmwarePath, destructive, version, expectedCRC) {
-
-    
 
     comms.requestBootloaderVersion((err, bootloaderVersion) => {
 

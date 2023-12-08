@@ -432,9 +432,10 @@ async function checkBootloaderSwitch (callback) {
 function requestBootloader (callback) {
 
     /* Send bootloader request packet and await confirmation message */
-    audiomoth.switchToBootloader(function (err, packet) {
 
-        if (err || packet === null) {
+    audiomoth.switchToBootloader(function (err, switchedToBootloader) {
+
+        if (err || switchedToBootloader === null) {
 
             callback(new Error('Failed to switch AudioMoth to flash mode. Switch to USB/OFF, detach and reattach your device, and try again.'));
             return;
@@ -442,9 +443,10 @@ function requestBootloader (callback) {
         }
 
         /* Check for expected confirmation response */
-        if (packet[0] === 0x0A && packet[1] === 0x01) {
 
-            electronLog.log('Attached device switching to bootloader');
+        if (switchedToBootloader) {
+
+            electronLog.log('Attached device switching to flash mode');
 
             /* Device will load bootloader, repeatedly check for the appearance of a serial or MSD bootloader until timeout */
             bootloaderCheckTimedOut = false;
@@ -453,13 +455,14 @@ function requestBootloader (callback) {
             bootloaderCheckTimeout = setTimeout(function () {
 
                 bootloaderCheckTimedOut = true;
+
                 callback(new Error('Failed to switch AudioMoth to flash mode. Switch to USB/OFF, detach and reattach your device, and try again.'));
 
             }, BOOTLOADER_CHECK_MAX_TIMEOUT_LENGTH);
 
         } else {
 
-            callback(new Error('Attached device\'s firmware does not support bootloader switching over HID.'));
+            callback(new Error('AudioMoth refused to switch to flash mode. Switch to USB/OFF, detach and reattach your device, and try again.'));
 
         }
 
@@ -1259,7 +1262,8 @@ function sendUserPageClear (n, failureCallback, successCallback) {
 
         if (err) {
 
-            console.error('Failed to clear user page');
+            electronLog.error('Failed to clear user page -', err.message);
+
             failureCallback();
 
         } else {
@@ -1277,7 +1281,9 @@ function sendUserPageClear (n, failureCallback, successCallback) {
                     if (err) {
 
                         electronLog.error('Did not receive ACK from AudioMoth after sending user page end of file');
+
                         displayError('Failed to flash device.', 'User page EOF acknowledgement was not received from AudioMoth. Switch to USB/OFF, detach and reattach your device, and try again.');
+
                         stopCommunicating();
 
                     } else {
@@ -1311,6 +1317,7 @@ function checkUserPageClear (successCallback) {
     if (userPageCheckCount > MAX_USER_PAGE_CHECK_COUNT) {
 
         electronLog.error('Didn\'t receive expected checksum response after ' + MAX_USER_PAGE_CHECK_COUNT + ' attempts');
+
         displayError('Failed to flash device.', 'User page checksum was not received from AudioMoth. Switch to USB/OFF, detach and reattach your device, and try again.');
 
         stopCommunicating();
