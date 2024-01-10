@@ -9,34 +9,60 @@
 /* global document */
 
 const electron = require('electron');
+const {getCurrentWindow} = require('@electron/remote');
 
 const comms = require('../communication.js');
+const nightMode = require('../nightMode.js');
 
-var stepDivs = document.getElementsByClassName('step-div');
-var buttonDivs = document.getElementsByClassName('button-div');
+const stepDivs = document.getElementsByClassName('step-div');
+const buttonDivs = document.getElementsByClassName('button-div');
 
-var step0Button0 = document.getElementById('step0-button0');
-var step0Button1 = document.getElementById('step0-button1');
+const STEP_CONNECT_AUDIOMOTH = 0;
+const step0Button0 = document.getElementById('step0-button0');
+const step0Button1 = document.getElementById('step0-button1');
 
-var step1Button0 = document.getElementById('step1-button0');
+const STEP_POWER_INTO_SERIAL_FLASH_MODE = 1;
+const step1Button0 = document.getElementById('step1-button0');
 
-var step2Button0 = document.getElementById('step2-button0');
-var step2Button1 = document.getElementById('step2-button1');
+const STEP_VERIFY_CONNECTION_1 = 2;
+const step2Button0 = document.getElementById('step2-button0');
 
-var step3Button0 = document.getElementById('step3-button0');
+const STEP_ENABLE_SERIAL_FLASH_MODE = 3;
+const step3Button0 = document.getElementById('step3-button0');
+const step3Button1 = document.getElementById('step3-button1');
 
-var step4Button0 = document.getElementById('step4-button0');
+const STEP_VERIFY_CONNECTION_2 = 4;
+const step4Button0 = document.getElementById('step4-button0');
 
-var backLink = document.getElementById('back-link');
-var disabledBackLink = document.getElementById('disabled-back-link');
+const STEP_SET_SWITCH = 5;
+const step5Button0 = document.getElementById('step5-button0');
 
-var connectionDiv = document.getElementById('connection-div');
+const backLink = document.getElementById('back-link');
+const disabledBackLink = document.getElementById('disabled-back-link');
 
-var currentIndex = 0;
-var previousIndexes = [];
+const connectionDiv = document.getElementById('connection-div');
 
-var customSwitchImages = [document.getElementById('custom-switch-flash0'), document.getElementById('custom-switch-flash1')];
-var visibleFrame = 0;
+const statusRow = document.getElementById('status-row');
+
+let currentIndex = STEP_CONNECT_AUDIOMOTH;
+let previousIndexes = [];
+
+const customSwitchImages = [document.getElementById('custom-switch-flash0'), document.getElementById('custom-switch-flash1')];
+let visibleFrame = 0;
+
+electron.ipcRenderer.on('night-mode', (e, nm) => {
+
+    if (nm !== undefined) {
+
+        nightMode.setNightMode(nm);
+
+    } else {
+
+        nightMode.toggle();
+
+    }
+
+});
 
 function flashLEDs () {
 
@@ -53,35 +79,39 @@ electron.ipcRenderer.on('status-instructions', (event, status) => {
 
     switch (status) {
 
-    case comms.STATUS_USB_DRIVE_BOOTLOADER:
-        connectionDiv.innerHTML = 'Found AudioMoth in flash mode with a USB drive bootloader.';
-        connectionDiv.style.color = 'green';
-        step3Button0.disabled = false;
-        break;
-
     case comms.STATUS_SERIAL_BOOTLOADER:
-        connectionDiv.innerHTML = 'Found AudioMoth in flash mode with a serial bootloader.';
+        connectionDiv.innerHTML = 'Found an AudioMoth in serial flash mode.';
         connectionDiv.style.color = 'green';
-        step3Button0.disabled = false;
+        step2Button0.disabled = false;
+        step4Button0.disabled = false;
         break;
 
     case comms.STATUS_NO_AUDIOMOTH:
         connectionDiv.innerHTML = 'No AudioMoth found.';
         connectionDiv.style.color = 'red';
-        step3Button0.disabled = true;
+        step2Button0.disabled = true;
+        step4Button0.disabled = true;
         break;
 
     case comms.STATUS_AUDIOMOTH_AUTO:
-        connectionDiv.innerHTML = 'Found an AudioMoth with firmware which supports automatic flash mode switching installed.';
+        connectionDiv.innerHTML = 'Found an AudioMoth that will automatically switch to serial flash mode.';
         connectionDiv.style.color = 'green';
-        step3Button0.disabled = false;
+        step2Button0.disabled = false;
+        step4Button0.disabled = false;
         break;
 
     case comms.STATUS_AUDIOMOTH_MANUAL:
-        connectionDiv.innerHTML = 'Found an AudioMoth with firmware which does not support automatic flash mode switching. ';
-        connectionDiv.innerHTML += 'Follow instructions to manually switch.';
+        connectionDiv.innerHTML = 'Found an AudioMoth which must be manually switched to serial flash mode.';
         connectionDiv.style.color = 'red';
-        step3Button0.disabled = true;
+        step2Button0.disabled = true;
+        step4Button0.disabled = true;
+        break;
+
+    case comms.STATUS_AUDIOMOTH_USB:
+        connectionDiv.innerHTML = 'Found an AudioMoth that will use USB HID flashing.';
+        connectionDiv.style.color = 'green';
+        step2Button0.disabled = false;
+        step4Button0.disabled = false;
         break;
 
     }
@@ -100,6 +130,8 @@ function updateUI () {
     backLink.style.display = (currentIndex === 0) ? 'none' : '';
     disabledBackLink.style.display = (currentIndex === 0) ? '' : 'none';
 
+    statusRow.style.display = (currentIndex === STEP_VERIFY_CONNECTION_1 || currentIndex === STEP_VERIFY_CONNECTION_2) ? '' : 'none';
+
 }
 
 function addButtonListener (button, targetIndex) {
@@ -117,19 +149,25 @@ function addButtonListener (button, targetIndex) {
 
 function setUpButtons () {
 
-    addButtonListener(step0Button0, 1);
-    addButtonListener(step0Button1, 2);
+    addButtonListener(step0Button0, STEP_POWER_INTO_SERIAL_FLASH_MODE);
+    addButtonListener(step0Button1, STEP_ENABLE_SERIAL_FLASH_MODE);
 
-    addButtonListener(step1Button0, 3);
+    addButtonListener(step1Button0, STEP_VERIFY_CONNECTION_1);
 
-    addButtonListener(step2Button0, 1);
-    addButtonListener(step2Button1, 3);
+    addButtonListener(step2Button0, STEP_SET_SWITCH);
 
-    addButtonListener(step3Button0, 4);
+    addButtonListener(step3Button0, STEP_POWER_INTO_SERIAL_FLASH_MODE);
+    addButtonListener(step3Button1, STEP_VERIFY_CONNECTION_2);
 
-    step4Button0.addEventListener('click', () => {
+    addButtonListener(step4Button0, STEP_SET_SWITCH);
 
-        electron.remote.getCurrentWindow().close();
+    step5Button0.addEventListener('click', () => {
+
+        currentIndex = 0;
+        previousIndexes = [0];
+        updateUI();
+
+        getCurrentWindow().close();
 
     });
 

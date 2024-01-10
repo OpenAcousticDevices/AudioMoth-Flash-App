@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const showdown = require('showdown');
 const electronLog = require('electron-log');
+const {isInternetAvailable} = require('is-internet-available');
 
 /* Parse line breaks as <br> */
 showdown.setOption('simpleLineBreaks', true);
@@ -66,6 +67,12 @@ const FIRMWARE_URLS = [
 /* Array of release information objects */
 const releaseArrays = Array(FIRMWARE_NAMES.length).fill([]);
 
+/* Flag for whether or not local release file has been used. If this changes, show a warning */
+let usingLocalReleaseFile = false;
+
+/* Function called when download is complete */
+let statusUpdateFunction;
+
 /* Request the ID of the current firmware being displayed */
 
 function requestCurrentFirmwareID () {
@@ -80,9 +87,18 @@ function requestCurrentFirmwareID () {
 
 electron.ipcRenderer.on('changed-firmware', (e, fw) => {
 
-    console.log('Firmware changed to: ', FIRMWARE_NAMES[fw]);
+    getReleases(() => {
 
-    getReleases(prepareUI);
+        console.log('Firmware changed to: ', FIRMWARE_NAMES[fw]);
+        prepareUI();
+
+        if (statusUpdateFunction) {
+
+            statusUpdateFunction();
+
+        }
+
+    });
 
 });
 
@@ -271,7 +287,7 @@ exports.getLocalFirmwarePath = () => {
 
 function isFirmwareFile (directory) {
 
-    return new Promise(function (resolve) {
+    return new Promise((resolve) => {
 
         const contents = fs.readFileSync(directory);
 
@@ -404,6 +420,12 @@ function downloadFirmwareSuccess () {
     updateDownloadButtonForSelectedFirmware();
     setUIDisabled(false);
 
+    if (statusUpdateFunction) {
+
+        statusUpdateFunction();
+
+    }
+
 }
 
 electron.ipcRenderer.on('download-success', downloadFirmwareSuccess);
@@ -500,13 +522,19 @@ function remoteReleaseFailure (err) {
 
     electronLog.error(err);
 
-    dialog.showMessageBox({
-        type: 'error',
-        icon: path.join(__dirname, '/icon-64.png'),
-        title: 'Connection error',
-        buttons: ['OK'],
-        message: 'Failed to download latest release list. Attempting to use local list instead.'
-    });
+    if (!usingLocalReleaseFile) {
+
+        dialog.showMessageBox({
+            type: 'error',
+            icon: path.join(__dirname, '/icon-64.png'),
+            title: 'Connection error',
+            buttons: ['OK'],
+            message: 'Failed to download latest release list. Attempting to use local list instead.'
+        });
+
+    }
+
+    usingLocalReleaseFile = true;
 
     const firmwareID = requestCurrentFirmwareID();
 
@@ -546,12 +574,14 @@ function sortSemanticVersion (a, b) {
 
 /* Attempt to pull release information from Github */
 
-function getReleases (callback) {
+async function getReleases (callback) {
 
     const firmwareID = requestCurrentFirmwareID();
     const url = FIRMWARE_URLS[firmwareID];
 
-    if (!navigator.onLine) {
+    const isOnline = await isInternetAvailable();
+
+    if (!isOnline) {
 
         remoteReleaseFailure('No internet connection!');
         return;
@@ -564,6 +594,20 @@ function getReleases (callback) {
     xmlHttp.onload = () => {
 
         if (xmlHttp.status === 200) {
+
+            if (usingLocalReleaseFile) {
+
+                dialog.showMessageBox({
+                    type: 'info',
+                    icon: path.join(__dirname, '/icon-64.png'),
+                    title: 'Connection resumed',
+                    buttons: ['OK'],
+                    message: 'Connection to the internet resumed. Using online firmware release information.'
+                });
+
+            }
+
+            usingLocalReleaseFile = false;
 
             const releases = getReleaseInformation();
 
@@ -601,6 +645,14 @@ function getReleases (callback) {
 }
 
 exports.getReleases = getReleases;
+
+/* Set function called when download completes or firmware changes */
+
+exports.setStatusUpdateFunction = (f) => {
+
+    statusUpdateFunction = f;
+
+};
 
 /* Switch to downloaded firmware tab */
 

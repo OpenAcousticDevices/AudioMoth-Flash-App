@@ -24,7 +24,16 @@ const nightMode = require('./nightMode.js');
 const MAX_FILE_SIZE = 256 * 1024 - 0x4000;
 const MAX_FILE_SIZE_DESTRUCTIVE = 256 * 1024;
 
+const MILLISECONDS_IN_SECOND = 1000;
+
 /* UI elements */
+const downloadTabLink = document.getElementById('download-tab-link');
+const localTabLink = document.getElementById('local-tab-link');
+
+const TAB_DOWNLOAD = 0;
+const TAB_LOCAL = 1;
+let currentTab = TAB_DOWNLOAD;
+
 const fileButton = document.getElementById('file-button');
 
 const destructiveCheckbox = document.getElementById('destructive-checkbox');
@@ -39,8 +48,12 @@ const downloadButton = document.getElementById('download-button');
 
 const overwriteBootloaderDiv = document.getElementById('overwrite-bootloader-div');
 
+let deviceStatus = comms.STATUS_NO_AUDIOMOTH;
+
 /* Status set getStatus which enables/disables flash buttons */
 let inFlashableState = false;
+
+let inSerialBootloader = false;
 
 /* The names of supported firmware */
 const FIRMWARE_NAMES = ['AudioMoth-Firmware-Basic', 'AudioMoth-USB-Microphone', 'AudioMoth-GPS-Sync'];
@@ -48,15 +61,15 @@ const FIRMWARE_NAMES = ['AudioMoth-Firmware-Basic', 'AudioMoth-USB-Microphone', 
 /* Is overwrite bootloader option available */
 let overwriteBootloaderOptionEnabled = false;
 
-/* Should the user page be cleared of configuration when flashing */
-let clearUserPageEnabled = true;
+/* Should the user data be cleared of configuration when flashing */
+let clearUserDataEnabled = true;
 
-/* Counter for user page clear attempts */
-let clearUserPageAttempts = 0;
-const MAX_CLEAR_USER_PAGE_ATTEMPTS = 5;
+/* Should the USB HID flashing be used to flash devices */
+let useUSBHIDFlashing = true;
 
-/* Frequency of status check */
-const STATUS_TIMEOUT_LENGTH = 500;
+/* Counter for user data clear attempts */
+let clearUserDataAttempts = 0;
+const MAX_CLEAR_USER_DATA_ATTEMPTS = 5;
 
 /* Counter for port opening attempts */
 let portOpenReattempts = 0;
@@ -83,6 +96,15 @@ if (fs.existsSync(directory)) {
     directory = unpackedDirectory;
 
 }
+
+/* Current status object used to update information panel and flash button status */
+
+let statusResult;
+
+let supportsUSBHIDFlash = false;
+let supportsBootloaderSwitching = false;
+let firmwareVersion = [0, 0, 0];
+let firmwareDescription = '';
 
 const bootloaderUpdatePath = path.join(directory, 'audiomoth_bootloader_updater.bin');
 const bootloaderCRC = 'A435';
@@ -126,8 +148,43 @@ electron.ipcRenderer.on('logfile', () => {
 
 });
 
-/* Enable flash buttons based on whether or not the app and connected device are in a state which permits flashing */
+/**
+ * Debug function used to print the current device status
+ */
+function printDeviceStatus () {
 
+    switch (deviceStatus) {
+
+    case comms.STATUS_AUDIOMOTH_AUTO:
+        console.log('STATUS_AUDIOMOTH_AUTO');
+        break;
+
+    case comms.STATUS_AUDIOMOTH_MANUAL:
+        console.log('STATUS_AUDIOMOTH_MANUAL');
+        break;
+
+    case comms.STATUS_AUDIOMOTH_USB:
+        console.log('STATUS_AUDIOMOTH_USB');
+        break;
+
+    case comms.STATUS_NO_AUDIOMOTH:
+        console.log('STATUS_NO_AUDIOMOTH');
+        break;
+
+    case comms.STATUS_SERIAL_BOOTLOADER:
+        console.log('STATUS_SERIAL_BOOTLOADER');
+        break;
+
+    default:
+        break;
+
+    }
+
+}
+
+/**
+ * Enable flash buttons based on whether or not the app and connected device are in a state which permits flashing
+ */
 function updateFlashButtonState () {
 
     flashButtonDownloaded.disabled = (!inFlashableState || !firmwareInterface.isSelectionDownloaded() || comms.isCommunicating());
@@ -138,21 +195,21 @@ function updateFlashButtonState () {
 versionSelect.addEventListener('change', updateFlashButtonState);
 downloadButton.addEventListener('click', updateFlashButtonState);
 
-/* Work out the status of a connected device */
+function communicateDeviceStatus (newStatus) {
 
+    deviceStatus = newStatus;
+    electron.ipcRenderer.send('status-app', newStatus);
+
+}
+
+/**
+ * Work out the status of a connected device
+ * @param {function} callback Completion callback
+ */
 async function getStatus (callback) {
 
-    /* Check if an MSD device can be found on the system */
-    const msdPath = await comms.getMsdPath();
-
-    if (msdPath !== null) {
-
-        inFlashableState = true;
-        electron.ipcRenderer.send('status-app', comms.STATUS_USB_DRIVE_BOOTLOADER);
-        callback(null, 'Found AudioMoth in flash mode with a USB drive bootloader.');
-        return;
-
-    }
+    inFlashableState = false;
+    inSerialBootloader = false;
 
     /* Check if a serial device matching AudioMoth IDs can be found */
     const serialBootloader = await comms.isInBootloader();
@@ -160,97 +217,35 @@ async function getStatus (callback) {
     if (serialBootloader) {
 
         inFlashableState = true;
-        electron.ipcRenderer.send('status-app', comms.STATUS_SERIAL_BOOTLOADER);
-        callback(null, 'Found AudioMoth in flash mode with a serial bootloader.');
+        inSerialBootloader = true;
+        callback();
         return;
 
     }
 
-    /* If a device is present but not in bootloader, query whether it supports switching from USB to bootloader with a message */
-    comms.queryBootloaderSwitching(function (err, supportsBootloaderSwitching) {
+    try {
 
-        if (err) {
+        statusResult = await comms.getStatus();
 
-            /* If the message couldn't be sent, then the device is inaccessible */
-            inFlashableState = false;
-            electron.ipcRenderer.send('status-app', comms.STATUS_NO_AUDIOMOTH);
-            callback(null, 'No AudioMoth found.<br>Make sure the USB cable is connected and the switch is in USB/OFF.');
+        if (statusResult === null) {
 
-        } else {
-
-            /* If a device was found, regardless of bootloader switch support, request firmware information */
-            comms.requestFirmwareVersion(function (versionErr, versionString) {
-
-                comms.requestFirmwareDescription(function (descriptionErr, descriptionString) {
-
-                    let statusText;
-
-                    if (supportsBootloaderSwitching) {
-
-                        statusText = '';
-
-                        if (versionErr || descriptionErr) {
-
-                            statusText = 'Found an AudioMoth with firmware which supports automatic flash mode switching installed.';
-
-                        } else {
-
-                            statusText = 'Found an AudioMoth with ' + descriptionString + ' (' + versionString + ') installed.<br>';
-                            statusText += 'This supports automatic switching to flash mode.';
-
-                        }
-
-                        inFlashableState = true;
-                        electron.ipcRenderer.send('status-app', comms.STATUS_AUDIOMOTH_AUTO);
-                        callback(null, statusText);
-
-                    } else {
-
-                        /* Add link which opens instructions window */
-
-                        if (versionErr || descriptionErr || versionString === '0.0.0') {
-
-                            statusText = 'Found an AudioMoth with firmware which does not support automatic flash mode switching. ';
-                            statusText += '<a href="javascript:;" id="instruction-link">Follow instructions to manually switch to flash mode</a>.';
-
-                        } else {
-
-                            statusText = 'Found an AudioMoth with ' + descriptionString + ' (' + versionString + ') installed. ';
-                            statusText += '<a href="javascript:;" id="instruction-link">Follow instructions to manually switch to flash mode</a>.';
-
-                        }
-
-                        inFlashableState = false;
-                        electron.ipcRenderer.send('status-app', comms.STATUS_AUDIOMOTH_MANUAL);
-                        callback(null, statusText);
-
-                        /* Add a listener to the newly created hyperlink which opens the instructions window */
-                        const instructionLink = document.getElementById('instruction-link');
-
-                        if (instructionLink) {
-
-                            instructionLink.addEventListener('click', () => {
-
-                                electron.ipcRenderer.send('open-instructions');
-
-                            });
-
-                        }
-
-                    }
-
-                });
-
-            });
+            throw ('No AudioMoth found.');
 
         }
 
-    });
+        callback();
+
+    } catch (error) {
+
+        callback();
+
+    }
 
 }
 
-/* Send message to main process, triggering the completion message in the progress window */
-
+/**
+ * Send message to main process, triggering the completion message in the progress window
+ */
 function displayCompleteMessage () {
 
     electron.ipcRenderer.send('set-bar-completed');
@@ -260,22 +255,24 @@ function displayCompleteMessage () {
 }
 
 /* Re-enable the status box when the progress window closes */
-
 electron.ipcRenderer.on('flash-success', comms.stopCommunicating);
 
-/* Create string to display on progress bar during flashing */
-
+/**
+ * Create string to display on progress bar during flashing
+ * @param {string} version Version number as a string (x.x.x)
+ * @returns String to display on progress bar
+ */
 function getInfoText (version) {
 
     let infoText = '';
 
     if (version) {
 
-        infoText = 'Applying firmware version ' + version + ' to attached device.';
+        infoText = 'Applying firmware version ' + version + ' to attached AudioMoth.';
 
     } else {
 
-        infoText = 'Applying firmware to attached device';
+        infoText = 'Applying firmware to attached AudioMoth.';
 
     }
 
@@ -283,21 +280,25 @@ function getInfoText (version) {
 
 }
 
-function clearUserPage (successCallback) {
+/**
+ * Clear the connected device of all user data (config settings)
+ * @param {function} successCallback Success callback
+ */
+function clearUserData (successCallback) {
 
-    if (clearUserPageAttempts < MAX_CLEAR_USER_PAGE_ATTEMPTS) {
+    if (clearUserDataAttempts < MAX_CLEAR_USER_DATA_ATTEMPTS) {
 
-        clearUserPageAttempts++;
+        clearUserDataAttempts++;
 
-        electronLog.log('Attempting to clear user page. Attempt ' + clearUserPageAttempts);
+        electronLog.log('Attempting to clear user data. Attempt ' + clearUserDataAttempts);
 
-        comms.sendUserPageClear(() => {
+        comms.startUserDataClear(() => {
 
-            clearUserPage(successCallback);
+            clearUserData(successCallback);
 
         }, () => {
 
-            clearUserPageAttempts = 0;
+            clearUserDataAttempts = 0;
 
             successCallback();
 
@@ -305,9 +306,9 @@ function clearUserPage (successCallback) {
 
     } else {
 
-        electronLog.error('Failed to clear user page after ' + MAX_CLEAR_USER_PAGE_ATTEMPTS + ' attempts.');
+        electronLog.error('Failed to clear user data after ' + MAX_CLEAR_USER_DATA_ATTEMPTS + ' attempts.');
 
-        comms.displayError('Failed to clear user page after ' + MAX_CLEAR_USER_PAGE_ATTEMPTS + ' attempts.', 'Switch to USB/OFF, detach and reattach your device, and try again.');
+        comms.displayError('Flash failure', 'Failed to clear user data after ' + MAX_CLEAR_USER_DATA_ATTEMPTS + ' attempts. Detach and reattach your AudioMoth, and try again.');
 
         comms.stopCommunicating();
 
@@ -315,8 +316,14 @@ function clearUserPage (successCallback) {
 
 }
 
-/* Open file and write contents to serial port */
-
+/**
+ * Open file and write contents to serial port
+ * @param {string} firmwarePath Path to firmware
+ * @param {boolean} destructive Whether or not the flash will overwrite the bootloader
+ * @param {string} infoText Text to display on the loading bar window
+ * @param {string} expectedCRC Expected CRC value. If resulting CRC doesn't match, the user will be warned
+ * @param {function} successCallback Success callback
+ */
 function serialWrite (firmwarePath, destructive, infoText, expectedCRC, successCallback) {
 
     /* Calculate max size of progress bar and start */
@@ -334,16 +341,17 @@ function serialWrite (firmwarePath, destructive, infoText, expectedCRC, successC
 
         if (err) {
 
-            comms.displayError('Firmware binary cannot be read.', 'Redownload and try again.');
+            comms.displayError('Flash failure', 'Firmware binary cannot be read. Download again and retry.');
             comms.stopCommunicating();
 
         } else {
 
-            if (clearUserPageEnabled) {
+            if (clearUserDataEnabled) {
 
-                clearUserPage(() => {
+                clearUserData(() => {
 
-                    electronLog.log('Successfully cleared user page');
+                    electronLog.log('Successfully cleared user data');
+
                     comms.sendFirmware(contents, destructive, expectedCRC, successCallback, infoText, maxBlocks);
 
                 });
@@ -360,11 +368,15 @@ function serialWrite (firmwarePath, destructive, infoText, expectedCRC, successC
 
 }
 
-/* Open port, open file and write contents to that port */
-
+/**
+ * Open port, open file and write contents to that port
+ * @param {string} firmwarePath Path to firmware
+ * @param {boolean} destructive Whether or not the flash will overwrite the bootloader
+ * @param {string} infoText Text to display on the loading bar window
+ * @param {string} expectedCRC Expected CRC value. If resulting CRC doesn't match, the user will be warned
+ * @param {function} successCallback Success callback
+ */
 async function openPortAndSerialWrite (firmwarePath, destructive, infoText, expectedCRC, successCallback) {
-
-    electron.ipcRenderer.send('set-bar-serial-opening-port', portOpenReattempts);
 
     const portName = await comms.getAudioMothPortName();
 
@@ -384,7 +396,7 @@ async function openPortAndSerialWrite (firmwarePath, destructive, infoText, expe
         } else {
 
             electronLog.log('Gave up trying to open port after', portOpenReattempts, 'failed attempts.');
-            comms.displayError('Communication failure.', 'Could not connect to AudioMoth. Reconnect device and try again.');
+            comms.displayError('Communication failure', 'Could not connect to AudioMoth. Reconnect AudioMoth and try again.');
             comms.stopCommunicating();
             portOpenReattempts = 0;
 
@@ -418,7 +430,7 @@ async function openPortAndSerialWrite (firmwarePath, destructive, infoText, expe
         } else {
 
             electronLog.log('Gave up trying to open port after', portOpenReattempts, 'failed attempts.');
-            comms.displayError('Communication failure.', 'Could not connect to AudioMoth. Reconnect device and try again.');
+            comms.displayError('Communication failure', 'Could not connect to AudioMoth. Reconnect AudioMoth and try again.');
             comms.stopCommunicating();
             portOpenReattempts = 0;
 
@@ -428,60 +440,13 @@ async function openPortAndSerialWrite (firmwarePath, destructive, infoText, expe
 
 }
 
-/* If a device is found in the MSD bootloader, start firmware sending process */
-
-function msdWrite (firmwarePath, destructive, version) {
-
-    /* Message main process to display flashing message in progress bar */
-    electron.ipcRenderer.send('set-bar-flashing');
-
-    /* The MSD bootloader doesn't support being overwritten, so cancel */
-    if (destructive) {
-
-        electron.ipcRenderer.send('set-bar-aborted');
-
-        dialog.showMessageBox({
-            type: 'error',
-            icon: path.join(__dirname, '/icon-64.png'),
-            title: 'Cannot overwrite bootloader',
-            buttons: ['OK'],
-            message: 'You are trying to overwrite a USB drive bootloader. You cannot do this with this application.'
-        });
-
-        comms.stopCommunicating();
-        return;
-
-    }
-
-    electronLog.log('--- Starting MSD write ---');
-
-    /* Send version of firmware being written to main process */
-    electron.ipcRenderer.send('set-bar-info', getInfoText(version));
-
-    /* Flash using MSD bootloader */
-    comms.uploadFirmwareToMsd(firmwarePath, (msdErr) => {
-
-        if (msdErr) {
-
-            electronLog.error('MSD upload failure');
-            electronLog.error(msdErr);
-
-            dialog.showMessageBox({
-                type: 'error',
-                icon: path.join(__dirname, '/icon-64.png'),
-                title: 'Failed to upload firmware binary using USB drive bootloader',
-                buttons: ['OK'],
-                message: msdErr.message
-            });
-
-            comms.stopCommunicating();
-
-        }
-
-    }, displayCompleteMessage);
-
-}
-
+/**
+ * Open the port to the device, check bootloader version and then continue with flashing process
+ * @param {string} firmwarePath Path to firmware
+ * @param {boolean} destructive Whether or not the flash will overwrite the bootloader
+ * @param {string} version Firmware version as a string (x.x.x)
+ * @param {string} expectedCRC Expected CRC value. If resulting CRC doesn't match, the user will be warned
+ */
 async function openPortCheckBootloader (firmwarePath, destructive, version, expectedCRC) {
 
     const portName = await comms.getAudioMothPortName();
@@ -502,7 +467,7 @@ async function openPortCheckBootloader (firmwarePath, destructive, version, expe
         } else {
 
             electronLog.log('Gave up trying to open port to check bootloader after', portOpenReattempts, 'failed attempts.');
-            comms.displayError('Communication failure.', 'Could not connect to AudioMoth. Reconnect device and try again.');
+            comms.displayError('Communication failure', 'Could not connect to AudioMoth. Reconnect AudioMoth and try again.');
             comms.stopCommunicating();
             portOpenReattempts = 0;
 
@@ -541,7 +506,7 @@ async function openPortCheckBootloader (firmwarePath, destructive, version, expe
             } else {
 
                 electronLog.log('Gave up trying to open port to check bootloader after', portOpenReattempts, 'failed attempts.');
-                comms.displayError('Communication failure.', 'Could not connect to AudioMoth. Reconnect device and try again.');
+                comms.displayError('Communication failure', 'Could not connect to AudioMoth. Reconnect AudioMoth and try again.');
                 comms.stopCommunicating();
                 portOpenReattempts = 0;
 
@@ -553,6 +518,13 @@ async function openPortCheckBootloader (firmwarePath, destructive, version, expe
 
 }
 
+/**
+ * Check if bootloader needs updating, update it if necessary and then start serial write
+ * @param {string} firmwarePath Path to firmware
+ * @param {boolean} destructive Whether or not the flash will overwrite the bootloader
+ * @param {string} version Firmware version as a string (x.x.x)
+ * @param {string} expectedCRC Expected CRC value. If resulting CRC doesn't match, the user will be warned
+ */
 async function checkBootloaderThenSerialWrite (firmwarePath, destructive, version, expectedCRC) {
 
     comms.requestBootloaderVersion((err, bootloaderVersion) => {
@@ -573,7 +545,7 @@ async function checkBootloaderThenSerialWrite (firmwarePath, destructive, versio
             } else {
 
                 electronLog.log('--- Gave up trying to check bootloader after', bootloaderVersionReattempts, 'failed attempts. ---');
-                comms.displayError('Communication failure.', err.message + ' Reconnect device and try again.');
+                comms.displayError('Communication failure', err + ' Reconnect AudioMoth and try again.');
                 comms.stopCommunicating();
 
             }
@@ -614,7 +586,7 @@ async function checkBootloaderThenSerialWrite (firmwarePath, destructive, versio
 
                 /* Text which appears above progress bar while bootloader update is running */
 
-                const infoText = 'Applying bootloader update to attached device.';
+                const infoText = 'Applying bootloader update to attached AudioMoth.';
 
                 /* Wait a short period for port to close before reopening */
 
@@ -753,15 +725,51 @@ async function flashButtonOnClick (firmwarePath, destructive, version, expectedC
     /* Open progress bar */
     electron.ipcRenderer.send('start-bar');
 
-    /* Check for MSD bootloader if device is already in bootloader */
-    let msdPath = await comms.getMsdPath();
+    const overwriteBootloaderEnabled = overwriteBootloaderOptionEnabled && destructiveCheckbox.checked;
 
-    if (msdPath !== null) {
+    if (useUSBHIDFlashing) {
 
-        msdWrite(firmwarePath, destructive, version);
-        return;
+        if (!supportsUSBHIDFlash) {
+
+            electronLog.error('USB HID flashing not supported by current AudioMoth. Switching to serial');
+
+        } else if (overwriteBootloaderEnabled) {
+
+            electronLog.error('USB HID flashing not supported when bootloader overwriting is enabled. Switching to serial');
+
+        } else if (deviceStatus === comms.STATUS_SERIAL_BOOTLOADER) {
+
+            electronLog.log('Device supports USB HID flashing but is already in the serial bootloader. Switching to serial');
+
+        } else {
+
+            const firmwareNameValid = /^.+\.bin/.test(firmwarePath);
+
+            if (firmwareNameValid === false) {
+
+                electron.ipcRenderer.send('set-bar-aborted');
+                comms.displayError('Flash failure', 'Firmware is not a .BIN file.');
+                comms.stopCommunicating();
+                return;
+
+            }
+
+            comms.USBHIDFlash(firmwarePath, clearUserDataEnabled, expectedCRC, getInfoText(version), displayCompleteMessage, (err) => {
+
+                electronLog.error(err);
+                electron.ipcRenderer.send('set-bar-aborted');
+                comms.displayError('Flash failure', 'An error occurred during flashing. Detach and reattach your AudioMoth, and try again.');
+                comms.stopCommunicating();
+
+            });
+
+            return;
+
+        }
 
     }
+
+    electronLog.log('Flashing using serial flash...');
 
     portOpenReattempts = 0;
 
@@ -775,70 +783,44 @@ async function flashButtonOnClick (firmwarePath, destructive, version, expectedC
 
     }
 
-    /* If a device is present but not in bootloader, query whether it supports switching from USB to bootloader with a message */
-    comms.queryBootloaderSwitching(function (err, supportsBootloaderSwitching) {
+    if (supportsBootloaderSwitching) {
 
-        if (err) {
+        /* Switch device to bootloader */
+        comms.requestBootloader(async (bootloaderErr) => {
 
-            /* If the message couldn't be sent, then the device is inaccessible */
-            electron.ipcRenderer.send('set-bar-aborted');
-            comms.displayError('No AudioMoth found.', err.message);
-            comms.stopCommunicating();
+            if (bootloaderErr) {
 
-        } else {
+                electron.ipcRenderer.send('set-bar-aborted');
+                comms.displayError('Flash failure', 'Could not switch to serial flash mode. Detach and reattach your AudioMoth, and try again.');
+                comms.stopCommunicating();
 
-            if (supportsBootloaderSwitching) {
+            } else {
 
-                /* Switch device to bootloader */
-                comms.requestBootloader(async (bootloaderErr) => {
+                /* Check for serial bootloader again */
+                serialBootloader = await comms.isInBootloader();
 
-                    if (bootloaderErr) {
+                if (serialBootloader) {
 
-                        electron.ipcRenderer.send('set-bar-aborted');
-                        comms.displayError('Failed to switch to flash mode.', bootloaderErr.message);
-                        comms.stopCommunicating();
+                    /* Wait and then flash using serial communication */
+                    setTimeout(function () {
 
-                    } else {
+                        openPortCheckBootloader(firmwarePath, destructive, version, expectedCRC);
 
-                        /* Check for MSD bootloader again */
-                        msdPath = await comms.getMsdPath();
+                    }, PORT_OPEN_ATTEMPT_DELAY);
 
-                        if (msdPath !== null) {
+                    return;
 
-                            /* Flash using MSD */
-                            msdWrite(firmwarePath, destructive, version);
-                            return;
+                }
 
-                        }
-
-                        /* Check for serial bootloader again */
-                        serialBootloader = await comms.isInBootloader();
-
-                        if (serialBootloader) {
-
-                            /* Wait and then flash using serial communication */
-                            setTimeout(function () {
-
-                                openPortCheckBootloader(firmwarePath, destructive, version, expectedCRC);
-
-                            }, PORT_OPEN_ATTEMPT_DELAY);
-
-                            return;
-
-                        }
-
-                        comms.displayError('Failed to connect to AudioMoth.', 'Could not switch device to flash mode. Verify connection and try again.');
-                        comms.stopCommunicating();
-
-                    }
-
-                });
+                electron.ipcRenderer.send('set-bar-aborted');
+                comms.displayError('Flash failure', 'Could not switch to serial flash mode. Detach and reattach your AudioMoth, and try again.');
+                comms.stopCommunicating();
 
             }
 
-        }
+        });
 
-    });
+    }
 
 }
 
@@ -874,7 +856,7 @@ flashButtonLocal.addEventListener('click', () => {
 
     } else if (!fs.existsSync(firmwarePath)) {
 
-        errorMessage = 'Could not find selected binary.';
+        errorMessage = 'Selected binary no longer exists.';
 
     } else {
 
@@ -894,7 +876,7 @@ flashButtonLocal.addEventListener('click', () => {
 
     if (errorMessage !== '') {
 
-        comms.displayError(errorMessage, 'Select a valid file and try again.');
+        comms.displayError('Invalid binary', errorMessage + ' Select a valid file and try again.');
         firmwareInterface.updateFirmwareDirectoryDisplay('');
         return;
 
@@ -907,8 +889,9 @@ flashButtonLocal.addEventListener('click', () => {
 
 });
 
-/* File select button for local firmware files */
-
+/**
+ * File select button for local firmware files
+ */
 async function selectBinary () {
 
     const filenames = await dialog.showOpenDialog({
@@ -936,38 +919,144 @@ async function selectBinary () {
 
         }
 
+        updateStatusUI();
+
     }
 
 }
 
 fileButton.addEventListener('click', selectBinary);
 
-/* Loop which continuously works out the status of a connected device */
+/**
+ * Update the information text using cached information and flash button state after a status request
+ */
+function updateStatusUI () {
 
+    if (inSerialBootloader) {
+
+        statusDiv.innerHTML = 'Found an AudioMoth in serial flash mode.';
+        updateFlashButtonState();
+        communicateDeviceStatus(comms.STATUS_SERIAL_BOOTLOADER);
+        return;
+
+    }
+
+    if (statusResult === undefined || statusResult === null) {
+
+        inFlashableState = false;
+        statusDiv.innerHTML = 'No AudioMoth found.<br>Make sure the USB cable is connected and the switch is in USB/OFF.';
+        updateFlashButtonState();
+        communicateDeviceStatus(comms.STATUS_NO_AUDIOMOTH);
+        return;
+
+    }
+
+    supportsUSBHIDFlash = statusResult.supportsUSBHIDFlash;
+    supportsBootloaderSwitching = statusResult.supportsBootloaderSwitch;
+    firmwareVersion = statusResult.firmwareVersion;
+    firmwareDescription = statusResult.firmwareDescription;
+
+    let statusText;
+
+    if (supportsBootloaderSwitching) {
+
+        statusText = 'Found an AudioMoth with ' + firmwareDescription + ' (' + firmwareVersion[0] + '.' + firmwareVersion[1] + '.' + firmwareVersion[2] + ') installed.<br>';
+
+        if (overwriteBootloaderOptionEnabled && destructiveCheckbox.checked && currentTab === TAB_LOCAL) {
+
+            statusText += 'This AudioMoth will automatically enter serial flash mode and overwrite the bootloader.';
+            communicateDeviceStatus(comms.STATUS_AUDIOMOTH_AUTO);
+
+        } else {
+
+            if (supportsUSBHIDFlash && useUSBHIDFlashing) {
+
+                statusText += 'This AudioMoth will use USB HID flashing.';
+                communicateDeviceStatus(comms.STATUS_AUDIOMOTH_USB);
+
+            } else {
+
+                statusText += 'This AudioMoth will automatically enter serial flash mode.';
+                communicateDeviceStatus(comms.STATUS_AUDIOMOTH_AUTO);
+
+            }
+
+        }
+
+        inFlashableState = true;
+
+        if (!comms.isCommunicating()) {
+
+            statusDiv.innerHTML = statusText;
+            updateFlashButtonState();
+
+        }
+
+    } else {
+
+        /* Add link which opens instructions window */
+
+        if ((firmwareVersion[0] === 0 && firmwareVersion[1] === 0 && firmwareVersion[2] === 0) || !firmwareDescription === '') {
+
+            statusText = 'Found an AudioMoth.<br>';
+            statusText += '<a href="javascript:;" id="instruction-link">Follow instructions to manually switch to serial flash mode</a>.';
+
+        } else {
+
+            statusText = 'Found an AudioMoth with ' + firmwareDescription + ' (' + firmwareVersion[0] + '.' + firmwareVersion[1] + '.' + firmwareVersion[2] + ') installed.<br>';
+            statusText += '<a href="javascript:;" id="instruction-link">Follow instructions to manually switch to serial flash mode</a>.';
+
+        }
+
+        inFlashableState = false;
+        communicateDeviceStatus(comms.STATUS_AUDIOMOTH_MANUAL);
+
+        if (!comms.isCommunicating()) {
+
+            statusDiv.innerHTML = statusText;
+            updateFlashButtonState();
+
+        }
+
+        /* Add a listener to the newly created hyperlink which opens the instructions window */
+        const instructionLink = document.getElementById('instruction-link');
+
+        if (instructionLink) {
+
+            instructionLink.addEventListener('click', () => {
+
+                electron.ipcRenderer.send('open-instructions');
+
+            });
+
+        }
+
+    }
+
+}
+
+/**
+ * Loop which continuously works out the status of a connected device
+ */
 function updateStatusText () {
+
+    const milliseconds = Date.now() % MILLISECONDS_IN_SECOND;
+    let delay = MILLISECONDS_IN_SECOND / 2 - milliseconds;
+    if (delay < 0) delay += MILLISECONDS_IN_SECOND;
 
     /* Don't start a status update if the app is already communicating with the device */
     if (!comms.isCommunicating()) {
 
-        getStatus(function (err, status) {
+        getStatus(updateStatusUI);
 
-            if (!err && !comms.isCommunicating()) {
-
-                statusDiv.innerHTML = status;
-                updateFlashButtonState();
-
-            }
-
-        });
-
-        setTimeout(updateStatusText, STATUS_TIMEOUT_LENGTH);
+        setTimeout(updateStatusText, delay);
 
     } else {
 
         statusDiv.innerHTML = 'Communicating with AudioMoth.';
         inFlashableState = false;
         updateFlashButtonState();
-        setTimeout(updateStatusText, STATUS_TIMEOUT_LENGTH);
+        setTimeout(updateStatusText, delay);
 
     }
 
@@ -1022,6 +1111,8 @@ electron.ipcRenderer.on('update-check', () => {
 
 });
 
+/* Toggle whether or not write will be destructive (overwrite the bootloader) */
+
 electron.ipcRenderer.on('toggle-bootloader-overwrite', () => {
 
     overwriteBootloaderOptionEnabled = !overwriteBootloaderOptionEnabled;
@@ -1034,24 +1125,33 @@ electron.ipcRenderer.on('toggle-bootloader-overwrite', () => {
 
     }
 
-});
-
-electron.ipcRenderer.on('toggle-clear-user-page', () => {
-
-    clearUserPageEnabled = !clearUserPageEnabled;
+    updateStatusUI();
 
 });
 
-/* Prepare UI */
+/* Toggle clearing user data as part of a flash */
 
-firmwareInterface.updateFirmwareDirectoryDisplay('');
-updateStatusText();
+electron.ipcRenderer.on('toggle-clear-user-data', () => {
 
-/* Retrieve list of firmware releases from the OAD Github page */
+    clearUserDataEnabled = !clearUserDataEnabled;
 
-firmwareInterface.getReleases(firmwareInterface.prepareUI);
+    updateStatusUI();
+
+});
+
+/* Toggle USB HID flashing */
+
+electron.ipcRenderer.on('toggle-usb-hid-flashing', () => {
+
+    useUSBHIDFlashing = !useUSBHIDFlashing;
+
+    updateStatusUI();
+
+});
 
 destructiveCheckbox.addEventListener('change', () => {
+
+    updateStatusUI();
 
     if (!destructiveCheckbox.checked) {
 
@@ -1095,8 +1195,9 @@ electron.ipcRenderer.on('poll-night-mode', () => {
 
 });
 
-/* Request the ID of the current firmware being displayed */
-
+/**
+ * @returns Return the ID of the current firmware being displayed
+ */
 function requestCurrentFirmwareID () {
 
     const currentFirmwareID = electron.ipcRenderer.sendSync('poll-current-firmware');
@@ -1104,3 +1205,30 @@ function requestCurrentFirmwareID () {
     return currentFirmwareID;
 
 }
+
+downloadTabLink.addEventListener('click', () => {
+
+    currentTab = TAB_DOWNLOAD;
+
+    updateStatusUI();
+
+});
+
+localTabLink.addEventListener('click', () => {
+
+    currentTab = TAB_LOCAL;
+
+    updateStatusUI();
+
+});
+
+/* Prepare UI */
+
+firmwareInterface.updateFirmwareDirectoryDisplay('');
+updateStatusText();
+
+/* Retrieve list of firmware releases from the OAD Github page */
+
+firmwareInterface.getReleases(firmwareInterface.prepareUI);
+
+firmwareInterface.setStatusUpdateFunction(updateStatusUI);

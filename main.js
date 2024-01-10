@@ -27,11 +27,9 @@ let restartTimeout;
 let currentFirmware = FIRMWARE_BASIC;
 
 /* First and last section of the bar are dedicated to connecting to the device/switching to bootloader and restarting after */
-/* CONNECTION_PERCENTAGE_VALUE must equal MAX_PORT_OPEN_ATTEMPTS in app.js */
-const CONNECTION_PERCENTAGE_VALUE = 5;
 const READY_CHECK_PERCENTAGE_VALUE = 7;
 const RESTART_PERCENTAGE_VALUE = 10;
-const FLASH_PERCENTAGE_VALUE = 100 - CONNECTION_PERCENTAGE_VALUE - READY_CHECK_PERCENTAGE_VALUE - RESTART_PERCENTAGE_VALUE;
+const FLASH_PERCENTAGE_VALUE = 100 - READY_CHECK_PERCENTAGE_VALUE - RESTART_PERCENTAGE_VALUE;
 
 const firmwareDirectory = path.join(app.getPath('downloads'), 'AudioMothFirmware');
 
@@ -52,7 +50,7 @@ ipcMain.on('set-bar-restarted', () => {
 
     if (flashProgressBar) {
 
-        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + RESTART_PERCENTAGE_VALUE;
+        flashProgressBar.value = READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + RESTART_PERCENTAGE_VALUE;
 
     }
 
@@ -63,7 +61,7 @@ ipcMain.on('set-bar-restart-progress', (event, val) => {
     if (flashProgressBar) {
 
         const percentageComplete = RESTART_PERCENTAGE_VALUE * (val / restartTimeout);
-        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + percentageComplete;
+        flashProgressBar.value = READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + percentageComplete;
 
     }
 
@@ -77,7 +75,7 @@ ipcMain.on('set-bar-restarting', (event, timeout) => {
 
         flashProgressBar.detail = 'Restarting AudioMoth.';
         restartTimeout = timeout;
-        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE;
+        flashProgressBar.value = READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE;
 
     }
 
@@ -99,18 +97,7 @@ ipcMain.on('set-bar-flashing', () => {
 
     if (flashProgressBar) {
 
-        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE;
-
-    }
-
-});
-
-ipcMain.on('set-bar-msd-flash-progress', (event, val) => {
-
-    if (flashProgressBar) {
-
-        const percentageComplete = FLASH_PERCENTAGE_VALUE * (val / 100);
-        flashProgressBar.value = percentageComplete + CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE;
+        flashProgressBar.value = READY_CHECK_PERCENTAGE_VALUE;
 
     }
 
@@ -121,7 +108,7 @@ ipcMain.on('set-bar-serial-flash-progress', (event, val) => {
     if (flashProgressBar) {
 
         const percentageComplete = FLASH_PERCENTAGE_VALUE * (val / serialFlashMax);
-        flashProgressBar.value = percentageComplete + CONNECTION_PERCENTAGE_VALUE + READY_CHECK_PERCENTAGE_VALUE;
+        flashProgressBar.value = percentageComplete + READY_CHECK_PERCENTAGE_VALUE;
 
     }
 
@@ -209,34 +196,11 @@ ipcMain.on('set-bar-info', (event, infoText, max) => {
 
 });
 
-ipcMain.on('set-bar-user-page-ready-check', (event, val) => {
+ipcMain.on('set-bar-serial-ready-check', () => {
 
     if (flashProgressBar) {
 
-        flashProgressBar.detail = 'Checking device is ready to have user page cleared.';
-        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + val;
-
-    }
-
-});
-
-ipcMain.on('set-bar-serial-ready-check', (event, val) => {
-
-    if (flashProgressBar) {
-
-        flashProgressBar.detail = 'Checking device is ready to be flashed.';
-        flashProgressBar.value = CONNECTION_PERCENTAGE_VALUE + val;
-
-    }
-
-});
-
-ipcMain.on('set-bar-serial-opening-port', (event, val) => {
-
-    if (flashProgressBar) {
-
-        flashProgressBar.detail = 'Attempting to open port.';
-        flashProgressBar.value = val;
+        flashProgressBar.detail = 'Checking if AudioMoth is ready to be flashed.';
 
     }
 
@@ -253,7 +217,7 @@ ipcMain.on('start-bar', () => {
     flashProgressBar = new ProgressBar({
         title: 'AudioMoth Flash App',
         text: 'Flashing AudioMoth...',
-        detail: 'Switching to flash mode.',
+        detail: 'Switching to serial flash mode.',
         closeOnComplete: false,
         indeterminate: false,
         browserWindow: {
@@ -265,7 +229,8 @@ ipcMain.on('start-bar', () => {
             }
         },
         /* When a progress bar reaches 100, the value is locked. So to allow the bar to fill when updating the bootloader and then again for the flash, it fills to 100/101 initially. */
-        maxValue: 101
+        maxValue: 101,
+        height: process.platform === 'linux' ? 140 : 175
     });
 
     /* 'closable' option is not implemented on Linux, so block close action */
@@ -327,13 +292,21 @@ ipcMain.on('download-item', async (event, {url, fileName, directory}) => {
 
     const win = mainWindow;
 
-    console.log(await electronDL.download(win, url, {
-        filename: fileName,
-        directory,
-        errorMessage: 'Unable to download firmware file ' + fileName + '!',
-        onStarted: onDownloadStarted,
-        onCancel: onDownloadCancel
-    }));
+    try {
+
+        await electronDL.download(win, url, {
+            filename: fileName,
+            directory,
+            errorMessage: 'Unable to download firmware file ' + fileName + '!',
+            onStarted: onDownloadStarted,
+            onCancel: onDownloadCancel
+        });
+
+    } catch (err) {
+
+        console.error(err.message);
+
+    }
 
 });
 
@@ -355,22 +328,22 @@ function openInstructionsWindow () {
     }
 
     let windowWidth = 550;
-    let windowHeight = 590;
+    let windowHeight = 600;
 
     if (process.platform === 'linux') {
 
         windowWidth = 545;
-        windowHeight = 560;
+        windowHeight = 570;
 
     } else if (process.platform === 'darwin') {
 
         windowWidth = 545;
-        windowHeight = 563;
+        windowHeight = 573;
 
     }
 
     instructionsWindow = new BrowserWindow({
-        title: 'Manually Switch To Flash Mode',
+        title: 'Manually Switch To Serial Flash Mode',
         width: windowWidth,
         height: windowHeight,
         fullscreenable: false,
@@ -627,12 +600,23 @@ app.on('ready', () => {
 
             }
         }, {
+            type: 'separator'
+        }, {
             type: 'checkbox',
             checked: true,
             label: 'Clear User Data When Flashing',
             click: () => {
 
-                mainWindow.webContents.send('toggle-clear-user-page');
+                mainWindow.webContents.send('toggle-clear-user-data');
+
+            }
+        }, {
+            type: 'checkbox',
+            checked: true,
+            label: 'Use USB HID Flashing',
+            click: () => {
+
+                mainWindow.webContents.send('toggle-usb-hid-flashing');
 
             }
         }, {
