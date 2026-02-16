@@ -26,10 +26,11 @@ let restartTimeout;
 
 let currentFirmware = FIRMWARE_BASIC;
 
-/* First and last section of the bar are dedicated to connecting to the device/switching to bootloader and restarting after */
+/* First and last section of the bar are dedicated to connecting to the device/switching to bootloader then clearing user data (if enabled) and restarting after */
 const READY_CHECK_PERCENTAGE_VALUE = 7;
+const USER_DATA_CLEAR_PERCENTAGE_VALUE = 5;
 const RESTART_PERCENTAGE_VALUE = 10;
-const FLASH_PERCENTAGE_VALUE = 100 - READY_CHECK_PERCENTAGE_VALUE - RESTART_PERCENTAGE_VALUE;
+const FLASH_PERCENTAGE_VALUE = 100 - READY_CHECK_PERCENTAGE_VALUE - RESTART_PERCENTAGE_VALUE - USER_DATA_CLEAR_PERCENTAGE_VALUE;
 
 const firmwareDirectory = path.join(app.getPath('downloads'), 'AudioMothFirmware');
 
@@ -40,9 +41,81 @@ require('electron-debug')({
 
 let mainWindow, instructionsWindow, aboutWindow;
 
+const iconLocation = (process.platform === 'linux') ? '/build/icon.png' : '/build/icon.ico';
+const standardWindowSettings = {
+    resizable: false,
+    fullscreenable: false,
+    minimizable: false,
+    autoHideMenuBar: true,
+    icon: path.join(__dirname, iconLocation),
+    useContentSize: true,
+    webPreferences: {
+        enableRemoteModule: true,
+        nodeIntegration: true,
+        contextIsolation: false
+    }
+};
+
 let flashProgressBar;
 
+/* Generate settings objects for windows and progress bars */
+
+function generateSettings (width, height, title) {
+
+    const uniqueSettings = {
+        width,
+        height,
+        title
+    };
+
+    const settings = Object.assign({}, standardWindowSettings, uniqueSettings);
+    settings.parent = mainWindow;
+
+    return settings;
+
+}
+
 /* Progress bar functions */
+
+ipcMain.on('set-bar-clear-user-data-complete', () => {
+
+    console.log('Incrementing progress as user data clearing is complete.');
+
+    if (flashProgressBar) {
+
+        flashProgressBar.value = progressBeforeClearUserData + USER_DATA_CLEAR_PERCENTAGE_VALUE;
+
+    }
+
+});
+
+ipcMain.on('set-bar-clearing-user-data-progress', (event, val) => {
+
+    const percentageComplete = Math.min(val * USER_DATA_CLEAR_PERCENTAGE_VALUE, USER_DATA_CLEAR_PERCENTAGE_VALUE);
+
+    if (flashProgressBar) {
+
+        flashProgressBar.value = progressBeforeClearUserData + percentageComplete;
+
+    }
+
+});
+
+let progressBeforeClearUserData = 0;
+
+ipcMain.on('set-bar-clearing-user-data', () => {
+
+    console.log('Displaying clearing user data message on progress bar');
+
+    if (flashProgressBar) {
+
+        progressBeforeClearUserData = flashProgressBar.value;
+
+        flashProgressBar.detail = 'Clearing user data.';
+
+    }
+
+});
 
 ipcMain.on('set-bar-restarted', () => {
 
@@ -50,7 +123,7 @@ ipcMain.on('set-bar-restarted', () => {
 
     if (flashProgressBar) {
 
-        flashProgressBar.value = READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + RESTART_PERCENTAGE_VALUE;
+        flashProgressBar.value = READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + USER_DATA_CLEAR_PERCENTAGE_VALUE + RESTART_PERCENTAGE_VALUE;
 
     }
 
@@ -61,7 +134,7 @@ ipcMain.on('set-bar-restart-progress', (event, val) => {
     if (flashProgressBar) {
 
         const percentageComplete = RESTART_PERCENTAGE_VALUE * (val / restartTimeout);
-        flashProgressBar.value = READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + percentageComplete;
+        flashProgressBar.value = READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + USER_DATA_CLEAR_PERCENTAGE_VALUE + percentageComplete;
 
     }
 
@@ -75,7 +148,7 @@ ipcMain.on('set-bar-restarting', (event, timeout) => {
 
         flashProgressBar.detail = 'Restarting AudioMoth.';
         restartTimeout = timeout;
-        flashProgressBar.value = READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE;
+        flashProgressBar.value = READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + USER_DATA_CLEAR_PERCENTAGE_VALUE;
 
     }
 
@@ -174,6 +247,7 @@ ipcMain.on('set-bar-aborted', () => {
     if (flashProgressBar) {
 
         flashProgressBar.close();
+        flashProgressBar = null;
 
     }
 
@@ -226,11 +300,11 @@ ipcMain.on('start-bar', () => {
                 enableRemoteModule: true,
                 nodeIntegration: true,
                 contextIsolation: false
-            }
+            },
+            height: process.platform === 'linux' ? 145 : 175
         },
         /* When a progress bar reaches 100, the value is locked. So to allow the bar to fill when updating the bootloader and then again for the flash, it fills to 100/101 initially. */
-        maxValue: 101,
-        height: process.platform === 'linux' ? 140 : 175
+        maxValue: 101
     });
 
     /* 'closable' option is not implemented on Linux, so block close action */
@@ -319,14 +393,6 @@ function openInstructionsWindow () {
 
     }
 
-    let iconLocation = '/build/icon.ico';
-
-    if (process.platform === 'linux') {
-
-        iconLocation = '/build/icon.png';
-
-    }
-
     let windowWidth = 550;
     let windowHeight = 600;
 
@@ -342,21 +408,8 @@ function openInstructionsWindow () {
 
     }
 
-    instructionsWindow = new BrowserWindow({
-        title: 'Manually Switch To Serial Flash Mode',
-        width: windowWidth,
-        height: windowHeight,
-        fullscreenable: false,
-        resizable: false,
-        useContentSize: true,
-        icon: path.join(__dirname, iconLocation),
-        parent: mainWindow,
-        webPreferences: {
-            enableRemoteModule: true,
-            nodeIntegration: true,
-            contextIsolation: false
-        }
-    });
+    const settings = generateSettings(windowWidth, windowHeight, 'Manually Switch To Serial Flash Mode');
+    instructionsWindow = new BrowserWindow(settings);
 
     instructionsWindow.setMenu(null);
     instructionsWindow.loadURL(path.join('file://', __dirname, '/instructions/instructions.html'));
@@ -390,8 +443,6 @@ function openAboutWindow () {
 
     }
 
-    let iconLocation = '/build/icon.ico';
-
     let windowWidth = 400;
     let windowHeight = 310;
 
@@ -400,8 +451,6 @@ function openAboutWindow () {
         windowWidth = 395;
         windowHeight = 310;
 
-        iconLocation = '/build/icon.png';
-
     } else if (process.platform === 'darwin') {
 
         windowWidth = 395;
@@ -409,22 +458,8 @@ function openAboutWindow () {
 
     }
 
-    aboutWindow = new BrowserWindow({
-        width: windowWidth,
-        height: windowHeight,
-        title: 'About AudioMoth Flash App',
-        resizable: false,
-        fullscreenable: false,
-        autoHideMenuBar: true,
-        useContentSize: true,
-        icon: path.join(__dirname, iconLocation),
-        parent: mainWindow,
-        webPreferences: {
-            enableRemoteModule: true,
-            nodeIntegration: true,
-            contextIsolation: false
-        }
-    });
+    const settings = generateSettings(windowWidth, windowHeight, 'About AudioMoth Flash App');
+    aboutWindow = new BrowserWindow(settings);
 
     aboutWindow.setMenu(null);
     aboutWindow.loadURL(path.join('file://', __dirname, '/about.html'));
@@ -670,6 +705,8 @@ app.on('ready', () => {
             label: 'About',
             click: openAboutWindow
         }, {
+            type: 'separator'
+        }, {
             label: 'Save Log File',
             accelerator: 'CommandOrControl+L',
             click: () => {
@@ -677,6 +714,15 @@ app.on('ready', () => {
                 mainWindow.webContents.send('logfile');
 
             }
+        }, {
+            label: 'Clear Log File',
+            click: () => {
+
+                mainWindow.webContents.send('logfileClear');
+
+            }
+        }, {
+            type: 'separator'
         }, {
             label: 'Check For Updates',
             click: () => {

@@ -1,6 +1,6 @@
 {
   "name": "AudioMoth-Flash",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "The flashing app used to apply firmware to the AudioMoth acoustic monitoring device.",
   "main": "main.js",
   "author": "openacousticdevices.info",
@@ -60,7 +60,7 @@
     }
   },
   "devDependencies": {
-    "electron": "25.3.2",
+    "electron": "26.0.0",
     "electron-builder": "^24.6.3",
     "electron-rebuild": "^3.2.7",
     "eslint": "^8.45.0",
@@ -78,7 +78,7 @@
     "electron-debug": "3.2.0",
     "electron-dl": "^3.5.0",
     "electron-log": "^4.4.8",
-    "electron-progressbar": "^2.1.0",
+    "electron-progressbar": "^2.2.1",
     "is-internet-available": "^3.1.0",
     "jquery": "^3.7.0",
     "popper.js": "^1.15.0",

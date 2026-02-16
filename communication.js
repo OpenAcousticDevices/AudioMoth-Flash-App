@@ -21,6 +21,7 @@ const electronLog = require('electron-log');
 
 const MAXIMUM_RETRIES = 10;
 const DEFAULT_RETRY_INTERVAL = 100;
+exports.DEFAULT_RETRY_INTERVAL = DEFAULT_RETRY_INTERVAL;
 const DEFAULT_DELAY_BETWEEN_PACKETS = 10;
 const DEFAULT_DELAY_BETWEEN_CRC_REQUESTS = 500;
 const MAXIMUM_FIRMWARE_PACKET_SIZE = 56;
@@ -136,7 +137,7 @@ let flashFailed = false;
  * @param {int} repeats Number of attempts before giving up
  * @returns Result of function
  */
-async function callWithRetry (funcSync, argument, milliseconds, repeats) {
+async function callWithRetry (funcSync, argument, milliseconds, repeats, failureCallback) {
 
     let result;
 
@@ -159,6 +160,12 @@ async function callWithRetry (funcSync, argument, milliseconds, repeats) {
             break;
 
         } catch (e) {
+
+            if (failureCallback) {
+
+                failureCallback(attempt, e);
+
+            }
 
             const interval = milliseconds / 2 + milliseconds / 2 * Math.random();
 
@@ -1046,7 +1053,7 @@ function sendFirmwareData (expectedCRC, isDestructive, successCallback) {
     if (numberOfRepeats >= MAX_REPEATS) {
 
         electronLog.error('Attempted and failed to send firmware data', numberOfRepeats, 'times. Giving up.');
-        displayError('Communication failure', '‘Something went wrong whilst flashing. Detach and reattach your AudioMoth, and try again.');
+        displayError('Communication failure', 'Something went wrong whilst flashing. Detach and reattach your AudioMoth, and try again.');
         clearTimeout(responseTimeout);
         timedOut = false;
         flashFailed = true;
@@ -1076,8 +1083,6 @@ function sendFirmwareData (expectedCRC, isDestructive, successCallback) {
 
         if (timedOut) {
 
-            /* Update current block number calculation */
-            upper = Math.min(Math.max(upper, blockNumber + 1), splitBuffers.length - 1);
             electronLog.log('Block ', blockNumber, ' timed out, reattempting');
 
         } else {
@@ -1598,7 +1603,14 @@ async function USBHIDFlash (firmwarePath, clearUserData, expectedCRC, infoText, 
 
             electronLog.log('Clearing user data');
 
-            result = await callWithRetry(sendPacketToUSBHIDBootloader, [AM_BOOTLOADER_CLEAR_USER_DATA], DEFAULT_RETRY_INTERVAL, MAXIMUM_RETRIES);
+            electron.ipcRenderer.send('set-bar-clearing-user-data');
+
+            result = await callWithRetry(sendPacketToUSBHIDBootloader, [AM_BOOTLOADER_CLEAR_USER_DATA], DEFAULT_RETRY_INTERVAL, MAXIMUM_RETRIES, (attempt, e) => {
+
+                electronLog.error('Failed to clear user data. Attempt', attempt, 'of', MAXIMUM_RETRIES, '-', e.message);
+                electron.ipcRenderer.send('set-bar-clearing-user-data-progress', attempt / MAXIMUM_RETRIES);
+
+            });
 
             if (result[1] !== AM_BOOTLOADER_CLEAR_USER_DATA) {
 
@@ -1611,6 +1623,8 @@ async function USBHIDFlash (firmwarePath, clearUserData, expectedCRC, infoText, 
                 throw ('AudioMoth did not clear user data.');
 
             }
+
+            electron.ipcRenderer.send('set-bar-clear-user-data-complete');
 
         }
 

@@ -148,6 +148,48 @@ electron.ipcRenderer.on('logfile', () => {
 
 });
 
+/* Menu button to clear current log file (keeping old ones) */
+
+function clearLogFile () {
+
+    const logFilePath = electronLog.transports.file.getFile().path;
+
+    fs.writeFile(logFilePath, '', (err) => {
+
+        if (err) {
+
+            electronLog.error('Failed to clear log file:', err);
+
+        } else {
+
+            electronLog.log('Log file cleared successfully.');
+
+        }
+
+    });
+
+}
+
+electron.ipcRenderer.on('logfileClear', () => {
+
+    dialog.showMessageBox({
+        type: 'warning',
+        icon: path.join(__dirname, '/icon-64.png'),
+        title: 'Clear log file',
+        buttons: ['OK', 'Cancel'],
+        message: 'Are you sure you want to clear the log file? This action cannot be undone.'
+    }).then((result) => {
+
+        if (result.response === 0) {
+
+            clearLogFile();
+
+        }
+
+    });
+
+});
+
 /**
  * Debug function used to print the current device status
  */
@@ -290,11 +332,17 @@ function clearUserData (successCallback) {
 
         clearUserDataAttempts++;
 
+        electron.ipcRenderer.send('set-bar-clearing-user-data-progress', clearUserDataAttempts / MAX_CLEAR_USER_DATA_ATTEMPTS);
+
         electronLog.log('Attempting to clear user data. Attempt ' + clearUserDataAttempts);
 
         comms.startUserDataClear(() => {
 
-            clearUserData(successCallback);
+            setTimeout(() => {
+
+                clearUserData(successCallback);
+
+            }, comms.DEFAULT_RETRY_INTERVAL * 20);
 
         }, () => {
 
@@ -348,9 +396,13 @@ function serialWrite (firmwarePath, destructive, infoText, expectedCRC, successC
 
             if (clearUserDataEnabled) {
 
+                electron.ipcRenderer.send('set-bar-clearing-user-data');
+
                 clearUserData(() => {
 
                     electronLog.log('Successfully cleared user data');
+
+                    electron.ipcRenderer.send('set-bar-clear-user-data-complete');
 
                     comms.sendFirmware(contents, destructive, expectedCRC, successCallback, infoText, maxBlocks);
 
@@ -754,7 +806,9 @@ async function flashButtonOnClick (firmwarePath, destructive, version, expectedC
 
             }
 
-            comms.USBHIDFlash(firmwarePath, clearUserDataEnabled, expectedCRC, getInfoText(version), displayCompleteMessage, (err) => {
+            const infoText = getInfoText(version).replace('Applying', 'Sending');
+
+            comms.USBHIDFlash(firmwarePath, clearUserDataEnabled, expectedCRC, infoText, displayCompleteMessage, (err) => {
 
                 electronLog.error(err);
                 electron.ipcRenderer.send('set-bar-aborted');
