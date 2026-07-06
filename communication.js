@@ -6,6 +6,8 @@
 
 'use strict';
 
+/* global process, Buffer, __dirname */
+
 const electron = require('electron');
 const {dialog} = require('@electron/remote');
 
@@ -29,7 +31,6 @@ const NUMBER_OF_BUFFER_TO_SEND = process.platform === 'win32' ? 30 : 60;
 
 /* USB HID flashing constants */
 
-/* eslint-disable no-multi-spaces,no-unused-vars */
 const AM_BOOTLOADER_GET_VERSION                 = 0x01;
 const AM_BOOTLOADER_INITIALISE_SRAM             = 0x02;
 const AM_BOOTLOADER_CLEAR_USER_DATA             = 0x03;
@@ -38,7 +39,6 @@ const AM_BOOTLOADER_CALC_SRAM_FIRMWARE_CRC      = 0x05;
 const AM_BOOTLOADER_CALC_FLASH_FIRMWARE_CRC     = 0x06;
 const AM_BOOTLOADER_GET_FIRMWARE_CRC            = 0x07;
 const AM_BOOTLOADER_FLASH_FIRMWARE              = 0x08;
-/* eslint-enable no-multi-spaces,no-unused-vars */
 
 /* Timeout to close port if message is sent and no response is received */
 const PORT_TIMEOUT_LENGTH = 1500;

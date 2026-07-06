@@ -6,7 +6,7 @@
 
 'use strict';
 
-/* global document */
+/* global __dirname */
 
 const electron = require('electron');
 const {dialog, getCurrentWindow} = require('@electron/remote');
@@ -306,7 +306,7 @@ electron.ipcRenderer.on('flash-success', comms.stopCommunicating);
  */
 function getInfoText (version) {
 
-    let infoText = '';
+    let infoText;
 
     if (version) {
 
@@ -775,7 +775,7 @@ async function flashButtonOnClick (firmwarePath, destructive, version, expectedC
     }
 
     /* Open progress bar */
-    electron.ipcRenderer.send('start-bar');
+    electron.ipcRenderer.sendSync('start-bar');
 
     const overwriteBootloaderEnabled = overwriteBootloaderOptionEnabled && destructiveCheckbox.checked;
 

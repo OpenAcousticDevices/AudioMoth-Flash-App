@@ -6,9 +6,13 @@
 
 'use strict';
 
-const {app, Menu, shell, ipcMain, BrowserWindow} = require('electron');
+/* global process, __dirname */
 
-require('@electron/remote/main').initialize();
+const {app, Menu, shell, ipcMain, BrowserWindow} = require('electron');
+const remoteMain = require('@electron/remote/main');
+remoteMain.initialize();
+
+const electronDebug = require('electron-debug');
 
 const path = require('path');
 const fs = require('fs');
@@ -19,7 +23,6 @@ const FIRMWARE_MICROPHONE = 1;
 const FIRMWARE_GPS = 2;
 
 const electronDL = require('electron-dl');
-const ProgressBar = require('electron-progressbar');
 
 let serialFlashMax;
 let restartTimeout;
@@ -34,12 +37,8 @@ const FLASH_PERCENTAGE_VALUE = 100 - READY_CHECK_PERCENTAGE_VALUE - RESTART_PERC
 
 const firmwareDirectory = path.join(app.getPath('downloads'), 'AudioMothFirmware');
 
-require('electron-debug')({
-    showDevTools: true,
-    devToolsMode: 'undocked'
-});
-
-let mainWindow, instructionsWindow, aboutWindow;
+let mainWindow, instructionsWindow, aboutWindow, progressBarWindow;
+let allowProgressWindowClose = false;
 
 const iconLocation = (process.platform === 'linux') ? '/build/icon.png' : '/build/icon.ico';
 const standardWindowSettings = {
@@ -50,13 +49,11 @@ const standardWindowSettings = {
     icon: path.join(__dirname, iconLocation),
     useContentSize: true,
     webPreferences: {
-        enableRemoteModule: true,
+        contextIsolation: false,
         nodeIntegration: true,
-        contextIsolation: false
+        sandbox: false
     }
 };
-
-let flashProgressBar;
 
 /* Generate settings objects for windows and progress bars */
 
@@ -77,15 +74,21 @@ function generateSettings (width, height, title) {
 
 /* Progress bar functions */
 
+function setProgressBarValue (newValue) {
+
+    if (!progressBarWindow.isDestroyed()) {
+
+        progressBarWindow.webContents.send('set-progress-bar-value', newValue);
+
+    }
+
+}
+
 ipcMain.on('set-bar-clear-user-data-complete', () => {
 
     console.log('Incrementing progress as user data clearing is complete.');
 
-    if (flashProgressBar) {
-
-        flashProgressBar.value = progressBeforeClearUserData + USER_DATA_CLEAR_PERCENTAGE_VALUE;
-
-    }
+    setProgressBarValue(progressBeforeClearUserData + USER_DATA_CLEAR_PERCENTAGE_VALUE);
 
 });
 
@@ -93,11 +96,7 @@ ipcMain.on('set-bar-clearing-user-data-progress', (event, val) => {
 
     const percentageComplete = Math.min(val * USER_DATA_CLEAR_PERCENTAGE_VALUE, USER_DATA_CLEAR_PERCENTAGE_VALUE);
 
-    if (flashProgressBar) {
-
-        flashProgressBar.value = progressBeforeClearUserData + percentageComplete;
-
-    }
+    setProgressBarValue(progressBeforeClearUserData + percentageComplete);
 
 });
 
@@ -107,11 +106,11 @@ ipcMain.on('set-bar-clearing-user-data', () => {
 
     console.log('Displaying clearing user data message on progress bar');
 
-    if (flashProgressBar) {
+    if (!progressBarWindow.isDestroyed()) {
 
-        progressBeforeClearUserData = flashProgressBar.value;
+        progressBarWindow.webContents.send('set-progress-bar-detail', 'Clearing user data.');
 
-        flashProgressBar.detail = 'Clearing user data.';
+        progressBeforeClearUserData = progressBarWindow.progressBarCurrentValue;
 
     }
 
@@ -121,22 +120,14 @@ ipcMain.on('set-bar-restarted', () => {
 
     console.log('Incrementing progress as restart process is complete.');
 
-    if (flashProgressBar) {
-
-        flashProgressBar.value = READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + USER_DATA_CLEAR_PERCENTAGE_VALUE + RESTART_PERCENTAGE_VALUE;
-
-    }
+    setProgressBarValue(READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + USER_DATA_CLEAR_PERCENTAGE_VALUE + RESTART_PERCENTAGE_VALUE);
 
 });
 
 ipcMain.on('set-bar-restart-progress', (event, val) => {
 
-    if (flashProgressBar) {
-
-        const percentageComplete = RESTART_PERCENTAGE_VALUE * (val / restartTimeout);
-        flashProgressBar.value = READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + USER_DATA_CLEAR_PERCENTAGE_VALUE + percentageComplete;
-
-    }
+    const percentageComplete = RESTART_PERCENTAGE_VALUE * (val / restartTimeout);
+    setProgressBarValue(READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + USER_DATA_CLEAR_PERCENTAGE_VALUE + percentageComplete);
 
 });
 
@@ -144,11 +135,11 @@ ipcMain.on('set-bar-restarting', (event, timeout) => {
 
     console.log('Displaying restart message on progress bar with timeout:', timeout);
 
-    if (flashProgressBar) {
+    if (!progressBarWindow.isDestroyed()) {
 
-        flashProgressBar.detail = 'Restarting AudioMoth.';
+        progressBarWindow.webContents.send('set-progress-bar-detail', 'Restarting AudioMoth.');
         restartTimeout = timeout;
-        flashProgressBar.value = READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + USER_DATA_CLEAR_PERCENTAGE_VALUE;
+        setProgressBarValue(READY_CHECK_PERCENTAGE_VALUE + FLASH_PERCENTAGE_VALUE + USER_DATA_CLEAR_PERCENTAGE_VALUE);
 
     }
 
@@ -156,9 +147,9 @@ ipcMain.on('set-bar-restarting', (event, timeout) => {
 
 ipcMain.on('set-bar-checking-bootloader', () => {
 
-    if (flashProgressBar) {
+    if (!progressBarWindow.isDestroyed()) {
 
-        flashProgressBar.detail = 'Checking if bootloader needs updating.';
+        progressBarWindow.webContents.send('set-progress-bar-detail', 'Checking if bootloader needs updating.');
 
     }
 
@@ -168,34 +159,20 @@ ipcMain.on('set-bar-flashing', () => {
 
     console.log('Incrementing progress as connection process is complete.');
 
-    if (flashProgressBar) {
-
-        flashProgressBar.value = READY_CHECK_PERCENTAGE_VALUE;
-
-    }
+    setProgressBarValue(READY_CHECK_PERCENTAGE_VALUE);
 
 });
 
 ipcMain.on('set-bar-serial-flash-progress', (event, val) => {
 
-    if (flashProgressBar) {
-
-        const percentageComplete = FLASH_PERCENTAGE_VALUE * (val / serialFlashMax);
-        flashProgressBar.value = percentageComplete + READY_CHECK_PERCENTAGE_VALUE;
-
-    }
+    const percentageComplete = FLASH_PERCENTAGE_VALUE * (val / serialFlashMax);
+    setProgressBarValue(percentageComplete + READY_CHECK_PERCENTAGE_VALUE);
 
 });
 
 ipcMain.on('reset-bar', () => {
 
-    if (!flashProgressBar) {
-
-        return;
-
-    }
-
-    flashProgressBar.value = 0;
+    setProgressBarValue(0);
 
 });
 
@@ -203,10 +180,11 @@ ipcMain.on('set-bar-bootloader-update-completed', () => {
 
     console.log('Setting bar to completed. Waiting before start requested flash.');
 
-    if (flashProgressBar) {
+    if (!progressBarWindow.isDestroyed()) {
 
-        flashProgressBar.value = 100;
-        flashProgressBar.detail = 'Bootloader update complete.';
+        setProgressBarValue(100);
+
+        progressBarWindow.webContents.send('set-progress-bar-detail', 'Bootloader update complete.');
 
         setTimeout(function () {
 
@@ -222,15 +200,15 @@ ipcMain.on('set-bar-completed', () => {
 
     console.log('Setting bar to completed. Waiting before closing progress bar window.');
 
-    if (flashProgressBar) {
+    if (!progressBarWindow.isDestroyed()) {
 
-        flashProgressBar.setCompleted();
-        flashProgressBar.detail = 'Firmware has been successfully updated.';
+        setProgressBarValue(100);
+
+        progressBarWindow.webContents.send('set-progress-bar-detail', 'Firmware has been successfully updated.');
 
         setTimeout(function () {
 
-            flashProgressBar.close();
-            flashProgressBar = null;
+            closeProgressBarWindow();
 
             mainWindow.webContents.send('flash-success');
 
@@ -244,18 +222,13 @@ ipcMain.on('set-bar-aborted', () => {
 
     console.log('Aborting progress.');
 
-    if (flashProgressBar) {
-
-        flashProgressBar.close();
-        flashProgressBar = null;
-
-    }
+    closeProgressBarWindow();
 
 });
 
 ipcMain.on('set-bar-info', (event, infoText, max) => {
 
-    if (flashProgressBar) {
+    if (!progressBarWindow.isDestroyed()) {
 
         if (max) {
 
@@ -264,7 +237,7 @@ ipcMain.on('set-bar-info', (event, infoText, max) => {
 
         }
 
-        flashProgressBar.detail = infoText;
+        progressBarWindow.webContents.send('set-progress-bar-detail', infoText);
 
     }
 
@@ -272,54 +245,19 @@ ipcMain.on('set-bar-info', (event, infoText, max) => {
 
 ipcMain.on('set-bar-serial-ready-check', () => {
 
-    if (flashProgressBar) {
+    if (!progressBarWindow.isDestroyed()) {
 
-        flashProgressBar.detail = 'Checking if AudioMoth is ready to be flashed.';
+        progressBarWindow.webContents.send('set-progress-bar-detail', 'Checking if AudioMoth is ready to be flashed.');
 
     }
 
 });
 
-ipcMain.on('start-bar', () => {
+ipcMain.on('start-bar', (e) => {
 
-    if (flashProgressBar) {
+    createProgressBar('AudioMoth Flash App', 'Flashing AudioMoth...', 'Switching to serial flash mode.', 100, () => {
 
-        return;
-
-    }
-
-    flashProgressBar = new ProgressBar({
-        title: 'AudioMoth Flash App',
-        text: 'Flashing AudioMoth...',
-        detail: 'Switching to serial flash mode.',
-        closeOnComplete: false,
-        indeterminate: false,
-        browserWindow: {
-            parent: mainWindow,
-            webPreferences: {
-                enableRemoteModule: true,
-                nodeIntegration: true,
-                contextIsolation: false
-            },
-            height: process.platform === 'linux' ? 145 : 175
-        },
-        /* When a progress bar reaches 100, the value is locked. So to allow the bar to fill when updating the bootloader and then again for the flash, it fills to 100/101 initially. */
-        maxValue: 101
-    });
-
-    /* 'closable' option is not implemented on Linux, so block close action */
-    flashProgressBar._window.on('close', (event) => {
-
-        event.preventDefault();
-
-    });
-
-    console.log('Bar created.');
-
-    flashProgressBar.on('aborted', () => {
-
-        console.log('Flash bar aborted');
-        flashProgressBar = null;
+        e.returnValue = true;
 
     });
 
@@ -378,7 +316,7 @@ ipcMain.on('download-item', async (event, {url, fileName, directory}) => {
 
     } catch (err) {
 
-        console.error(err.message);
+        console.error('Unable to download firmware file:', err.message);
 
     }
 
@@ -404,17 +342,23 @@ function openInstructionsWindow () {
     } else if (process.platform === 'darwin') {
 
         windowWidth = 545;
-        windowHeight = 573;
+        windowHeight = 580;
 
     }
 
     const settings = generateSettings(windowWidth, windowHeight, 'Manually Switch To Serial Flash Mode');
     instructionsWindow = new BrowserWindow(settings);
 
-    instructionsWindow.setMenu(null);
-    instructionsWindow.loadURL(path.join('file://', __dirname, '/instructions/instructions.html'));
-
     require('@electron/remote/main').enable(instructionsWindow.webContents);
+
+    instructionsWindow.setMenu(null);
+    instructionsWindow.loadFile('instructions/instructions.html');
+
+    if (!app.isPackaged) {
+
+        electronDebug.openDevTools(instructionsWindow);
+
+    }
 
     instructionsWindow.webContents.on('dom-ready', () => {
 
@@ -461,10 +405,22 @@ function openAboutWindow () {
     const settings = generateSettings(windowWidth, windowHeight, 'About AudioMoth Flash App');
     aboutWindow = new BrowserWindow(settings);
 
-    aboutWindow.setMenu(null);
-    aboutWindow.loadURL(path.join('file://', __dirname, '/about.html'));
-
     require('@electron/remote/main').enable(aboutWindow.webContents);
+
+    aboutWindow.setMenu(null);
+    aboutWindow.loadFile('about.html');
+
+    if (!app.isPackaged) {
+
+        electronDebug.openDevTools(aboutWindow);
+
+    }
+
+    aboutWindow.webContents.on('dom-ready', () => {
+
+        mainWindow.webContents.send('poll-night-mode');
+
+    });
 
     aboutWindow.on('close', (e) => {
 
@@ -553,7 +509,7 @@ app.on('ready', () => {
     }
 
     let windowWidth = 565;
-    let windowHeight = 450;
+    let windowHeight = 400;
 
     if (process.platform === 'linux') {
 
@@ -563,7 +519,7 @@ app.on('ready', () => {
     } else if (process.platform === 'darwin') {
 
         windowWidth = 560;
-        windowHeight = 428;
+        windowHeight = 455;
 
     }
 
@@ -583,19 +539,8 @@ app.on('ready', () => {
         }
     });
 
-    require('@electron/remote/main').enable(mainWindow.webContents);
-
-    mainWindow.on('restore', () => {
-
-        /* When minimised and restored, Windows platforms alter the BrowserWindow such that the height no longer includes the menu bar */
-        /* This resize cannot be blocked so this fix resizes it, taking into account the menu change */
-        if (process.platform === 'win32') {
-
-            mainWindow.setSize(565, windowHeight + 40);
-
-        }
-
-    });
+    // TODO: This line fixes this issue: https://github.com/electron/electron/issues/51465 Check to see if still broken
+    mainWindow.setSize(windowWidth, windowHeight);
 
     const menuTemplate = [{
         label: 'File',
@@ -746,9 +691,98 @@ app.on('ready', () => {
 
     Menu.setApplicationMenu(menu);
 
-    mainWindow.loadURL(path.join('file://', __dirname, '/index.html'));
+    require('@electron/remote/main').enable(mainWindow.webContents);
+
+    mainWindow.loadFile('index.html');
+
+    if (!app.isPackaged) {
+
+        electronDebug.openDevTools(mainWindow);
+
+    }
 
 });
+
+function createProgressBar (windowTitle, heading, detail, maxValue, onReady) {
+
+    if (!progressBarWindow || progressBarWindow.isDestroyed()) {
+
+        let windowWidth = 500;
+        const windowHeight = 160;
+
+        if (process.platform === 'linux') {
+
+            windowWidth = 495;
+
+        } else if (process.platform === 'darwin') {
+
+            windowWidth = 495;
+
+        }
+
+        const settings = generateSettings(windowWidth, windowHeight, '');
+        progressBarWindow = new BrowserWindow({
+            ...settings,
+            modal: true,
+            parent: mainWindow
+        });
+
+        require('@electron/remote/main').enable(progressBarWindow.webContents);
+
+        progressBarWindow.setMenu(null);
+        progressBarWindow.loadFile('progressBar.html');
+
+        if (!app.isPackaged) {
+
+            electronDebug.openDevTools(progressBarWindow);
+
+        }
+
+        allowProgressWindowClose = false;
+
+        progressBarWindow.on('close', (e) => {
+
+            if (!allowProgressWindowClose) {
+
+                e.preventDefault();
+
+            }
+
+        });
+
+    } else {
+
+        progressBarWindow.show();
+
+    }
+
+    progressBarWindow.webContents.once('dom-ready', () => {
+
+        progressBarWindow.webContents.send('create-progress-bar', {
+            windowTitle,
+            heading,
+            detail,
+            maxValue
+        });
+
+        onReady();
+
+    });
+
+}
+
+function closeProgressBarWindow () {
+
+    if (!progressBarWindow.isDestroyed()) {
+
+        allowProgressWindowClose = true;
+        progressBarWindow.destroy();
+
+    }
+
+}
+
+ipcMain.on('close-progress-bar', closeProgressBarWindow);
 
 app.on('window-all-closed', () => {
 

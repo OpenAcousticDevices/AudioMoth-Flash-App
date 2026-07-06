@@ -6,7 +6,7 @@
 
 'use strict';
 
-/* global XMLHttpRequest */
+/* global __dirname */
 
 /* Firmware files open with a 32-bit address 0 which are valid if they fall between these two values */
 const MIN_ADDRESS_0 = 536870912;
@@ -529,7 +529,7 @@ function remoteReleaseFailure (err) {
             icon: path.join(__dirname, '/icon-64.png'),
             title: 'Connection error',
             buttons: ['OK'],
-            message: 'Failed to download latest release list. Attempting to use local list instead.'
+            message: 'Failed to download latest release list. Attempting to use local list.'
         });
 
     }
