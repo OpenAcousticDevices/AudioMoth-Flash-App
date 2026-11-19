@@ -1,6 +1,6 @@
 {
     "name": "AudioMoth-Flash",
-    "version": "1.7.3",
+    "version": "1.7.4",
     "description": "The flashing app used to apply firmware to the AudioMoth acoustic monitoring device.",
     "main": "main.js",
     "author": "openacousticdevices.info <theteam@openacousticdevices.info>",
@@ -12,8 +12,9 @@
     "scripts": {
         "postinstall": "install-app-deps && node scripts/install-electron-binary.js",
         "start": "electron .",
-        "dist": "node builder.js",
-        "install-electron-binary": "node scripts/install-electron-binary.js"
+        "dist": "rimraf dist && node builder.js",
+        "install-electron-binary": "node scripts/install-electron-binary.js",
+    "sign": "xcrun notarytool submit dist/AudioMothFlashAppSetup${npm_package_version}.dmg --keychain-profile \"oad\" --wait && sudo xcrun stapler staple dist/AudioMothFlashAppSetup${npm_package_version}.dmg"
     },
     "build": {
         "asar": {
@@ -26,9 +27,13 @@
         "mac": {
             "hardenedRuntime": true,
             "entitlements": "build/entitlements.mac.inherit.plist",
-            "target": "dmg"
+            "target": {
+                "target": "dmg",
+                "arch": "universal"
+            }
         },
         "dmg": {
+            "title": "AudioMoth-Flash ${version}",
             "contents": [
                 {
                     "x": 110,
@@ -63,10 +68,11 @@
     },
     "devDependencies": {
         "@eslint/js": "^10.0.1",
-        "electron": "42.5.0",
-        "electron-builder": "^26.15.3",
+        "electron": "43.8.3",
+        "electron-builder": "^26.18.0",
         "eslint": "^10.6.0",
-        "globals": "^17.7.0"
+        "globals": "^17.7.0",
+        "rimraf": "^6.1.4"
     },
     "dependencies": {
         "@electron/rebuild": "^4.0.6",

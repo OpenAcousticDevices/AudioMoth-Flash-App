@@ -1141,7 +1141,7 @@ electron.ipcRenderer.on('update-check', () => {
             dialog.showMessageBox(getCurrentWindow(), {
                 type: 'info',
                 title: 'Update not needed',
-                message: 'Your app is on the latest version (' + response.latestVersion + ').'
+                message: 'AudioMoth Flash App is on the latest version (' + response.latestVersion + ').'
             });
 
             return;
